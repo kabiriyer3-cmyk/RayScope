@@ -7,6 +7,8 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -41,6 +43,10 @@ class RayVpnService : VpnService() {
     private val lock = Mutex()
     private var statsJob: Job? = null
     private var liveFails = 0
+    private var netCallback: ConnectivityManager.NetworkCallback? = null
+
+    @Volatile
+    private var lastNet: Network? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -72,14 +78,24 @@ class RayVpnService : VpnService() {
                 val st = Repo.settings
                 val b = Builder()
                 b.setSession(server.cleanName())
-                b.setMtu(st.mtu)
+                b.setMtu(st.mtu.coerceIn(1280, 9000))
                 b.addAddress("10.10.14.1", 30)
                 b.addRoute("0.0.0.0", 0)
+                var dnsAdded = 0
                 st.dnsList().filter { isIpv4(it) }.forEach { d ->
                     try {
                         b.addDnsServer(d)
+                        dnsAdded++
                     } catch (e: Exception) {
                         AppLog.add("DNS $d пропущен: ${e.message}")
+                    }
+                }
+                if (dnsAdded == 0) {
+                    // only DoH / hostnames configured: give the system a plain resolver, the core still routes it
+                    try {
+                        b.addDnsServer("1.1.1.1")
+                    } catch (e: Exception) {
+                        AppLog.add("DNS fallback: ${e.message}")
                     }
                 }
                 if (st.ipv6) {
@@ -103,6 +119,7 @@ class RayVpnService : VpnService() {
                 AppLog.add("Подключено: ${server.name}")
                 notifyText(server.cleanName(), "Подключено")
                 startStats()
+                registerNetWatch()
             } catch (e: Throwable) {
                 AppLog.add("Ошибка подключения: ${e.message}")
                 fail(e.message ?: e.javaClass.simpleName)
@@ -110,7 +127,10 @@ class RayVpnService : VpnService() {
         }
     }
 
-    private fun isIpv4(s: String): Boolean = s.matches(Regex("^\\d{1,3}(\\.\\d{1,3}){3}$"))
+    private fun isIpv4(s: String): Boolean {
+        val parts = s.split('.')
+        return parts.size == 4 && parts.all { p -> p.isNotEmpty() && p.length <= 3 && p.all { it.isDigit() } && p.toInt() <= 255 }
+    }
 
     private fun applyPerApp(b: Builder, st: Settings) {
         val self = packageName
@@ -140,13 +160,51 @@ class RayVpnService : VpnService() {
         }
     }
 
+    // ------------------------------------------------------------------ network change watch
+
+    private fun registerNetWatch() {
+        unregisterNetWatch()
+        if (!Repo.settings.reconnectOnNetworkChange) return
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return
+        lastNet = null
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                val prev = lastNet
+                lastNet = network
+                if (prev != null && prev != network && tun != null) {
+                    AppLog.add("Сеть сменилась: перезапускаю ядро")
+                    switchServer(countAsSwitch = false)
+                }
+            }
+        }
+        try {
+            cm.registerDefaultNetworkCallback(cb)
+            netCallback = cb
+        } catch (e: Throwable) {
+            AppLog.add("Не удалось следить за сетью: ${e.message}")
+        }
+    }
+
+    private fun unregisterNetWatch() {
+        val cb = netCallback ?: return
+        netCallback = null
+        try {
+            getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(cb)
+        } catch (e: Throwable) {
+            // already unregistered
+        }
+    }
+
+    // ------------------------------------------------------------------ stats + live ping
+
     private fun startStats() {
         statsJob?.cancel()
         liveFails = 0
         statsJob = scope.launch {
             var tick = 0
             while (isActive) {
-                if (tick % 30 == 0) launch { measureLive() }
+                val every = Repo.settings.livePingInterval.coerceIn(5, 600)
+                if (tick % every == 0) launch { measureLive() }
                 tick++
                 delay(1000)
                 if (!CoreManager.isRunning) continue
@@ -191,11 +249,12 @@ class RayVpnService : VpnService() {
         } catch (e: Throwable) {
             -1L
         }
-        VpnState.update { it.copy(livePing = d, pingHistory = (it.pingHistory + d).takeLast(20)) }
+        VpnState.update { it.copy(livePing = d, pingHistory = (it.pingHistory + d).takeLast(24)) }
         if (d < 0) {
             liveFails++
             AppLog.add("Контрольный пинг не прошёл ($liveFails)")
-            if (Repo.settings.autoFailover && liveFails >= 2) {
+            val st = Repo.settings
+            if (st.autoFailover && liveFails >= st.failoverThreshold.coerceIn(1, 10)) {
                 liveFails = 0
                 val current = VpnState.status.value.serverId
                 val alt = Repo.servers.value.filter { it.delay >= 0 && it.id != current }.minByOrNull { it.delay }
@@ -211,7 +270,7 @@ class RayVpnService : VpnService() {
     }
 
     /** Restart the core with the currently selected server, keeping the TUN interface. */
-    fun switchServer() {
+    fun switchServer(countAsSwitch: Boolean = true) {
         scope.launch {
             lock.withLock {
                 val fd = tun ?: return@withLock
@@ -226,11 +285,14 @@ class RayVpnService : VpnService() {
                     CoreManager.controller.startLoop(XrayConfig.build(server, Repo.settings, tun = true), fd.fd)
                     VpnState.update {
                         it.copy(
-                            state = ConnState.CONNECTED, since = System.currentTimeMillis(), livePing = -2,
-                            error = "", switches = it.switches + 1
+                            state = ConnState.CONNECTED,
+                            since = if (countAsSwitch) System.currentTimeMillis() else it.since,
+                            livePing = -2,
+                            error = "",
+                            switches = it.switches + (if (countAsSwitch) 1 else 0)
                         )
                     }
-                    AppLog.add("Переключено на ${server.name}")
+                    AppLog.add(if (countAsSwitch) "Переключено на ${server.name}" else "Ядро перезапущено")
                     liveFails = 0
                     launch { measureLive() }
                 } catch (e: Throwable) {
@@ -243,6 +305,7 @@ class RayVpnService : VpnService() {
 
     fun stopVpn() {
         VpnState.update { it.copy(state = ConnState.STOPPING) }
+        unregisterNetWatch()
         scope.launch {
             lock.withLock {
                 statsJob?.cancel()
@@ -270,6 +333,7 @@ class RayVpnService : VpnService() {
 
     private suspend fun fail(msg: String) {
         statsJob?.cancel()
+        unregisterNetWatch()
         try {
             CoreManager.controller.stopLoop()
         } catch (e: Throwable) {
@@ -296,6 +360,7 @@ class RayVpnService : VpnService() {
     override fun onDestroy() {
         instance = null
         statsJob?.cancel()
+        unregisterNetWatch()
         if (tun != null) {
             try {
                 CoreManager.controller.stopLoop()
