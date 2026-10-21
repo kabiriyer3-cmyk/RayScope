@@ -24,8 +24,11 @@ class App : Application() {
         AppLog.add("RayScope запущен. ${CoreManager.version()}")
         val st = Repo.settings
         scope.launch {
-            if (st.autoUpdateSubs && Repo.subs.value.isNotEmpty()) Actions.updateAllSubs(silent = true)
-            if (st.testOnLaunch && Repo.servers.value.isNotEmpty() && !st.testAfterUpdate) Actions.testAll(silent = true)
+            val updating = st.autoUpdateSubs && Repo.subs.value.isNotEmpty()
+            if (updating) Actions.updateAllSubs(silent = true)
+            // after an update with "test after update" the servers are already tested
+            val alreadyTested = updating && st.testAfterUpdate
+            if (st.testOnLaunch && !alreadyTested && Repo.servers.value.isNotEmpty()) Actions.testAll(silent = true)
         }
         // periodic re-test while the process is alive
         scope.launch {
