@@ -1,5 +1,5 @@
 /*
- * Liquid Glass for Jetpack Compose.
+ * Liquid Glass for Jetpack Compose (used sparingly: floating tab bar and floating connect button only).
  *
  * The refraction (lens) and specular-rim shaders are adapted from Kyant's
  * AndroidLiquidGlass / Backdrop library (https://github.com/Kyant0/AndroidLiquidGlass),
@@ -8,7 +8,6 @@
  * The screen content is recorded into a GraphicsLayer (the "backdrop"). Each glass element
  * redraws the part of the backdrop under it through an AGSL RuntimeShader that bends pixels near
  * the rounded edge like a lens, then adds a light-angle dependent specular rim. No blur.
- * Glass is only used for the floating navigation layer (tab bar, toolbar, FAB), like on iOS.
  * Real refraction needs Android 13+; older devices get a solid fallback.
  */
 package com.rayscope.app.ui
@@ -18,27 +17,23 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.RuntimeShader
 import android.os.Build
 import androidx.annotation.RequiresApi
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
@@ -58,14 +53,10 @@ import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 // ------------------------------------------------------------------ backdrop
 
@@ -112,15 +103,15 @@ private class GlassPos {
 }
 
 /**
- * Clear Liquid Glass: refracts what is under the element (lens bending at the edges),
- * boosts saturation slightly, adds a thin surface tint and a specular rim lit from the top-left.
+ * Clear Liquid Glass, toned down: gentle lens bending at the edges, a slightly denser tint so text
+ * under it never fights with the controls, and a thin specular rim lit from the top-left.
  */
 @Composable
 fun Modifier.liquidGlass(
     cornerRadius: Dp,
     tint: Color = Color.Unspecified,
-    refractionHeight: Dp = 12.dp,
-    refractionAmount: Dp = 20.dp,
+    refractionHeight: Dp = 10.dp,
+    refractionAmount: Dp = 14.dp,
 ): Modifier {
     val c = ray
     val backdrop = LocalBackdrop.current
@@ -130,11 +121,11 @@ fun Modifier.liquidGlass(
     val shape = RoundedCornerShape(cornerRadius)
     return this
         .shadow(
-            elevation = if (c.dark) 8.dp else 14.dp,
+            elevation = if (c.dark) 6.dp else 10.dp,
             shape = shape,
             clip = false,
             ambientColor = Color.Black.copy(alpha = 0.10f),
-            spotColor = Color.Black.copy(alpha = if (c.dark) 0.35f else 0.16f)
+            spotColor = Color.Black.copy(alpha = if (c.dark) 0.40f else 0.14f)
         )
         .onGloballyPositioned { pos.origin = it.positionInRoot() }
         .drawBehind {
@@ -164,7 +155,7 @@ fun Modifier.liquidGlass(
             }
             drawRoundRect(fill, cornerRadius = cr)
 
-            val sw = 1.2.dp.toPx()
+            val sw = 1.dp.toPx()
             val inset = Offset(sw / 2f, sw / 2f)
             val inner = Size(size.width - sw, size.height - sw)
             val icr = CornerRadius((r - sw / 2f).coerceAtLeast(0f))
@@ -176,13 +167,11 @@ fun Modifier.liquidGlass(
             } else {
                 drawRoundRect(c.rim.copy(alpha = c.rim.alpha * 0.30f), topLeft = inset, size = inner, cornerRadius = icr, style = Stroke(sw))
             }
-            if (!c.dark) {
-                drawRoundRect(Color.Black.copy(alpha = 0.06f), cornerRadius = cr, style = Stroke(0.5.dp.toPx()))
-            }
+            drawRoundRect(c.stroke, cornerRadius = cr, style = Stroke(0.6.dp.toPx()))
         }
 }
 
-/** A glass surface that swells while pressed, like iOS 26 controls. */
+/** A glass surface that swells slightly while pressed. */
 @Composable
 fun GlassSurface(
     cornerRadius: Dp,
@@ -196,8 +185,8 @@ fun GlassSurface(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (pressed) 1.08f else 1f,
-        animationSpec = spring(dampingRatio = 0.45f, stiffness = 600f),
+        targetValue = if (pressed) 1.05f else 1f,
+        animationSpec = spring(dampingRatio = 0.5f, stiffness = 600f),
         label = "glassPress"
     )
     var m = modifier
@@ -212,103 +201,13 @@ fun GlassSurface(
     Box(m, contentAlignment = contentAlignment, content = content)
 }
 
-// ------------------------------------------------------------------ page chrome
-
-/** Top offset for page content: status bar + floating glass toolbar. */
-@Composable
-fun pageTop(): Dp = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 56.dp
-
-@Composable
-fun navBottom(): Dp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-
-/**
- * iOS 26 style screen: content scrolls under floating Liquid Glass controls. The large title
- * lives in the content; once it scrolls away a compact glass title capsule pops in.
- */
-@Composable
-fun Page(
-    title: String? = null,
-    scrolled: Boolean = false,
-    onBack: (() -> Unit)? = null,
-    actions: (@Composable RowScope.() -> Unit)? = null,
-    overlay: @Composable BoxScope.() -> Unit = {},
-    content: @Composable () -> Unit,
-) {
-    val c = ray
-    val bd = rememberBackdrop()
-    Box(Modifier.fillMaxSize()) {
-        BackdropSource(bd, Modifier.fillMaxSize()) { content() }
-        CompositionLocalProvider(LocalBackdrop provides bd) {
-            Box(Modifier.fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars).background(c.bg))
-            Box(
-                Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp).height(44.dp)
-            ) {
-                if (onBack != null) {
-                    GlassSurface(22.dp, Modifier.align(Alignment.CenterStart).size(44.dp), onClick = onBack) {
-                        Icon(RayIcons.Back, contentDescription = "Назад", tint = c.text, modifier = Modifier.size(22.dp))
-                    }
-                }
-                if (title != null) {
-                    AnimatedVisibility(
-                        visible = scrolled,
-                        modifier = Modifier.align(Alignment.Center),
-                        enter = fadeIn(tween(180)) + scaleIn(spring(dampingRatio = 0.6f, stiffness = 500f), initialScale = 0.8f),
-                        exit = fadeOut(tween(140)) + scaleOut(tween(140), targetScale = 0.9f)
-                    ) {
-                        GlassSurface(19.dp, Modifier.height(38.dp).widthIn(max = 190.dp)) {
-                            Text(
-                                title, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(horizontal = 16.dp)
-                            )
-                        }
-                    }
-                }
-                if (actions != null) {
-                    GlassSurface(22.dp, Modifier.align(Alignment.CenterEnd).height(44.dp)) {
-                        Row(Modifier.padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically, content = actions)
-                    }
-                }
-            }
-            overlay()
-        }
-    }
-}
-
-@Composable
-fun ActionIcon(
-    icon: ImageVector,
-    desc: String,
-    tint: Color = ray.text,
-    enabled: Boolean = true,
-    iconModifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    Box(
-        Modifier.size(40.dp).clip(CircleShape).clickable(enabled = enabled, onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(icon, contentDescription = desc, tint = if (enabled) tint else tint.copy(alpha = 0.35f), modifier = iconModifier.size(21.dp))
-    }
-}
-
-@Composable
-fun ActionText(text: String, color: Color = ray.accent, onClick: () -> Unit) {
-    Box(
-        Modifier.height(40.dp).clip(RoundedCornerShape(20.dp)).clickable(onClick = onClick).padding(horizontal = 12.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(text, color = color, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-    }
-}
-
 // ------------------------------------------------------------------ shaders
 
 @RequiresApi(33)
 private class Lens {
     private val refraction = RuntimeShader(REFRACTION_AGSL)
     private val rim = RuntimeShader(HIGHLIGHT_AGSL)
-    private val saturate = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(1.4f) })
+    private val saturate = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(1.25f) })
 
     fun effect(w: Float, h: Float, r: Float, height: Float, amount: Float): androidx.compose.ui.graphics.RenderEffect {
         refraction.setFloatUniform("size", w, h)

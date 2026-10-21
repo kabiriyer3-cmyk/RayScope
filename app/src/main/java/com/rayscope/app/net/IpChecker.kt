@@ -36,11 +36,19 @@ object IpChecker {
         .callTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    private val viaCore: OkHttpClient by lazy {
-        base.newBuilder().proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", XrayConfig.HTTP_PORT))).build()
-    }
+    @Volatile
+    private var viaCore: Pair<Int, OkHttpClient>? = null
 
-    fun client(viaVpn: Boolean): OkHttpClient = if (viaVpn) viaCore else base
+    /** Direct client, or a client that goes through the local HTTP inbound of the running core. */
+    fun client(viaVpn: Boolean): OkHttpClient {
+        if (!viaVpn) return base
+        val port = XrayConfig.activeHttpPort
+        val cached = viaCore
+        if (cached != null && cached.first == port) return cached.second
+        val c = base.newBuilder().proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", port))).build()
+        viaCore = port to c
+        return c
+    }
 
     fun get(c: OkHttpClient, url: String): String {
         val req = Request.Builder().url(url).header("User-Agent", "RayScope/1.0").build()

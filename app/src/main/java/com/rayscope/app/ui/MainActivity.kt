@@ -21,9 +21,11 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
@@ -34,9 +36,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -56,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -113,21 +114,30 @@ class MainActivity : ComponentActivity() {
         val payload: String = text
         App.scope.launch { Actions.importText(payload) }
     }
+
+    companion object {
+        /** "Connect on launch" fires once per process, not on every rotation. */
+        @Volatile
+        var autoConnectDone = false
+    }
 }
 
 sealed class Route {
-    data object Tabs : Route()
     data class Detail(val id: String) : Route()
     data object Apps : Route()
     data object Logs : Route()
     data object Subs : Route()
+    data class Pref(val page: SetPage) : Route()
 }
 
 @Composable
 fun AppRoot() {
     val ctx = LocalContext.current
-    var route by remember { mutableStateOf<Route>(Route.Tabs) }
+    val scope = rememberCoroutineScope()
+    var stack by remember { mutableStateOf(listOf<Route>()) }
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    val push: (Route) -> Unit = { stack = stack + it }
+    val pop: () -> Unit = { stack = stack.dropLast(1) }
 
     val vpnLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         if (r.resultCode == Activity.RESULT_OK) RayVpnService.start(ctx) else toast("Разрешение на VPN не выдано")
@@ -141,12 +151,22 @@ fun AppRoot() {
         }
     }
 
+    val startVpn: () -> Unit = {
+        val i = VpnService.prepare(ctx)
+        if (i != null) vpnLauncher.launch(i) else RayVpnService.start(ctx)
+    }
     val connect: () -> Unit = {
-        if (Repo.selected() == null) {
+        if (Repo.servers.value.isEmpty()) {
             toast("Сначала добавьте сервер")
+        } else if (Repo.settings.pickBestOnConnect) {
+            scope.launch {
+                toast("Ищу самый быстрый сервер…")
+                val b = Actions.pickBest()
+                if (b != null) Repo.select(b.id)
+                startVpn()
+            }
         } else {
-            val i = VpnService.prepare(ctx)
-            if (i != null) vpnLauncher.launch(i) else RayVpnService.start(ctx)
+            startVpn()
         }
     }
     val toggle: () -> Unit = {
@@ -157,15 +177,28 @@ fun AppRoot() {
         }
     }
 
-    BackHandler(enabled = route != Route.Tabs) { route = Route.Tabs }
+    LaunchedEffect(Unit) {
+        if (!MainActivity.autoConnectDone) {
+            MainActivity.autoConnectDone = true
+            if (Repo.settings.connectOnLaunch &&
+                VpnState.status.value.state == ConnState.STOPPED &&
+                Repo.selected() != null &&
+                VpnService.prepare(ctx) == null
+            ) {
+                connect()
+            }
+        }
+    }
+
+    BackHandler(enabled = stack.isNotEmpty()) { pop() }
 
     val rootBackdrop = rememberBackdrop()
     RayBackground {
         BackdropSource(rootBackdrop, Modifier.fillMaxSize()) {
             AnimatedContent(
-                targetState = route,
+                targetState = stack,
                 transitionSpec = {
-                    if (targetState != Route.Tabs) {
+                    if (targetState.size >= initialState.size) {
                         (slideInHorizontally(spring(dampingRatio = 0.9f, stiffness = 380f)) { it / 3 } + fadeIn(tween(220))) togetherWith
                             (slideOutHorizontally(tween(260)) { -it / 6 } + fadeOut(tween(200)))
                     } else {
@@ -174,36 +207,33 @@ fun AppRoot() {
                     }
                 },
                 label = "route"
-            ) { r ->
-                when (r) {
-                    is Route.Detail -> ServerDetailScreen(r.id, onBack = { route = Route.Tabs }, onConnect = connect)
-                    Route.Apps -> AppsScreen(onBack = { route = Route.Tabs })
-                    Route.Logs -> LogsScreen(onBack = { route = Route.Tabs })
-                    Route.Subs -> SubsScreen(onBack = { route = Route.Tabs })
-                    Route.Tabs -> AnimatedContent(
+            ) { st ->
+                when (val r = st.lastOrNull()) {
+                    null -> AnimatedContent(
                         targetState = tab,
                         transitionSpec = {
-                            (fadeIn(tween(220, delayMillis = 50)) + scaleIn(tween(260, delayMillis = 50), initialScale = 0.97f)) togetherWith
+                            (fadeIn(tween(220, delayMillis = 50)) + scaleIn(tween(260, delayMillis = 50), initialScale = 0.98f)) togetherWith
                                 fadeOut(tween(110))
                         },
                         label = "tab"
                     ) { t ->
                         when (t) {
                             0 -> DashboardScreen(onToggle = toggle, onGoServers = { tab = 1 }, onGoIp = { tab = 2 })
-                            1 -> ServersScreen(onOpen = { route = Route.Detail(it) }, onToggle = toggle)
+                            1 -> ServersScreen(onOpen = { push(Route.Detail(it)) }, onToggle = toggle)
                             2 -> IpCheckScreen()
-                            else -> SettingsScreen(
-                                onApps = { route = Route.Apps },
-                                onLogs = { route = Route.Logs },
-                                onSubs = { route = Route.Subs }
-                            )
+                            else -> SettingsScreen(onOpen = push)
                         }
                     }
+                    is Route.Detail -> ServerDetailScreen(r.id, onBack = pop, onConnect = connect)
+                    Route.Apps -> AppsScreen(onBack = pop)
+                    Route.Logs -> LogsScreen(onBack = pop)
+                    Route.Subs -> SubsScreen(onBack = pop)
+                    is Route.Pref -> SettingsPageScreen(r.page, onBack = pop, onOpen = push)
                 }
             }
         }
         AnimatedVisibility(
-            visible = route == Route.Tabs,
+            visible = stack.isEmpty(),
             modifier = Modifier.align(Alignment.BottomCenter),
             enter = slideInVertically(spring(dampingRatio = 0.8f, stiffness = 400f)) { it } + fadeIn(),
             exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(160))
@@ -218,9 +248,9 @@ fun AppRoot() {
 private data class TabItem(val icon: ImageVector, val label: String)
 
 /**
- * Floating Liquid Glass tab bar. The selection pill moves like a drop of liquid: the leading edge
- * runs ahead on a stiff spring while the trailing edge catches up on a soft one, so the pill
- * stretches in flight and settles back into shape.
+ * Floating Liquid Glass tab bar. The active tab expands into a labelled capsule; the highlight moves
+ * like a drop of liquid: the leading edge runs ahead on a stiff spring while the trailing edge
+ * catches up on a soft one, so it stretches in flight and settles back into shape.
  */
 @Composable
 private fun GlassTabBar(tab: Int, onTab: (Int) -> Unit) {
@@ -228,28 +258,36 @@ private fun GlassTabBar(tab: Int, onTab: (Int) -> Unit) {
     val items = listOf(
         TabItem(RayIcons.Home, "Главная"),
         TabItem(RayIcons.Servers, "Серверы"),
-        TabItem(RayIcons.Globe, "IP"),
-        TabItem(RayIcons.Settings, "Настройки"),
+        TabItem(RayIcons.Radar, "Проверка"),
+        TabItem(RayIcons.Sliders, "Настройки"),
     )
-    val itemW = 76.dp
+    val small = 54.dp
+    val big = 122.dp
+    val h = 50.dp
     val prev = remember { IntArray(1) { tab } }
     val movingRight = tab >= prev[0]
-    val lead = spring<Dp>(dampingRatio = 0.72f, stiffness = 700f)
-    val trail = spring<Dp>(dampingRatio = 0.72f, stiffness = 240f)
-    val left by animateDpAsState(itemW * tab, if (movingRight) trail else lead, label = "tabLeft")
-    val right by animateDpAsState(itemW * (tab + 1), if (movingRight) lead else trail, label = "tabRight")
+    val lead = spring<Dp>(dampingRatio = 0.72f, stiffness = 650f)
+    val trail = spring<Dp>(dampingRatio = 0.78f, stiffness = 260f)
+    val left by animateDpAsState(small * tab, if (movingRight) trail else lead, label = "tabLeft")
+    val right by animateDpAsState(small * tab + big, if (movingRight) lead else trail, label = "tabRight")
     SideEffect { prev[0] = tab }
 
-    GlassSurface(32.dp, Modifier.navigationBarsPadding().padding(bottom = 8.dp)) {
-        Box(Modifier.padding(4.dp)) {
+    GlassSurface(30.dp, Modifier.navigationBarsPadding().padding(bottom = 10.dp)) {
+        Box(Modifier.padding(5.dp)) {
             Box(
-                Modifier.offset(x = left).width(right - left).height(54.dp)
-                    .clip(RoundedCornerShape(27.dp))
-                    .background(c.text.copy(alpha = if (c.dark) 0.13f else 0.07f))
+                Modifier.offset(x = left).width((right - left).coerceAtLeast(0.dp)).height(h)
+                    .clip(RoundedCornerShape(25.dp))
+                    .background(c.accent.copy(alpha = if (c.dark) 0.17f else 0.13f))
             )
-            Row(horizontalArrangement = Arrangement.Start) {
+            Row(horizontalArrangement = Arrangement.Start, verticalAlignment = Alignment.CenterVertically) {
                 items.forEachIndexed { i, item ->
-                    TabButton(item, i == tab, Modifier.width(itemW).height(54.dp)) { onTab(i) }
+                    val sel = i == tab
+                    val w by animateDpAsState(
+                        if (sel) big else small,
+                        spring(dampingRatio = 0.8f, stiffness = 420f),
+                        label = "tabW$i"
+                    )
+                    TabButton(item, sel, Modifier.width(w).height(h)) { onTab(i) }
                 }
             }
         }
@@ -259,30 +297,35 @@ private fun GlassTabBar(tab: Int, onTab: (Int) -> Unit) {
 @Composable
 private fun TabButton(item: TabItem, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val c = ray
-    val color by animateColorAsState(if (selected) c.accent else c.text, tween(220), label = "tabColor")
+    val color by animateColorAsState(if (selected) c.accent else c.text.copy(alpha = 0.78f), tween(220), label = "tabColor")
     val bump = remember { Animatable(1f) }
     LaunchedEffect(selected) {
         if (selected) {
-            bump.snapTo(0.78f)
-            bump.animateTo(1f, spring(dampingRatio = 0.38f, stiffness = 600f))
+            bump.snapTo(0.8f)
+            bump.animateTo(1f, spring(dampingRatio = 0.4f, stiffness = 600f))
         }
     }
-    Column(
+    Row(
         modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             item.icon, contentDescription = item.label, tint = color,
-            modifier = Modifier.size(24.dp).graphicsLayer {
+            modifier = Modifier.size(22.dp).graphicsLayer {
                 scaleX = bump.value
                 scaleY = bump.value
             }
         )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            item.label, fontSize = 10.sp, color = color,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1
-        )
+        AnimatedVisibility(
+            visible = selected,
+            enter = fadeIn(tween(180, delayMillis = 60)) + expandHorizontally(spring(dampingRatio = 0.8f, stiffness = 420f)),
+            exit = fadeOut(tween(100)) + shrinkHorizontally(tween(180))
+        ) {
+            Text(
+                item.label, fontSize = 13.sp, color = color, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                modifier = Modifier.padding(start = 7.dp)
+            )
+        }
     }
 }

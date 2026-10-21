@@ -4,12 +4,14 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -20,8 +22,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -60,14 +60,20 @@ fun SubsScreen(onBack: () -> Unit) {
         title = "Подписки",
         scrolled = scrolled,
         onBack = onBack,
-        actions = { ActionIcon(RayIcons.Plus, "Добавить", tint = c.accent) { addOpen = true } }
+        actions = {
+            ActionIcon(RayIcons.Download, "Обновить все", tint = c.text) { scope.launch { Actions.updateAllSubs(false) } }
+            ActionIcon(RayIcons.Plus, "Добавить", tint = c.accent) { addOpen = true }
+        }
     ) {
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(top = top, bottom = bottom)) {
-            item(key = "title") { LargeTitle("Подписки", "${subs.size}") }
+            item(key = "title") { ScreenTitle("Подписки", "${subs.size} · ${subs.sumOf { it.serverCount }} серверов") }
             if (subs.isEmpty()) {
                 item(key = "empty") {
-                    Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        IconBadge(RayIcons.Package, Indigo, 64.dp, 34.dp)
+                    Column(
+                        Modifier.fillMaxWidth().padding(16.dp).card(c, 24.dp).padding(28.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        IconTile(RayIcons.Package, Indigo, 64.dp, 32.dp)
                         Spacer(Modifier.height(12.dp))
                         Text("Подписок нет", color = c.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                         Text("Нажмите +, чтобы добавить URL", color = c.hint, fontSize = 14.sp)
@@ -75,13 +81,14 @@ fun SubsScreen(onBack: () -> Unit) {
                 }
             }
             items(subs, key = { it.id }) { sub ->
-                Column(Modifier.animateItem()) {
+                Column(Modifier.animateItem().padding(horizontal = 16.dp, vertical = 6.dp)) {
                     SubInfoCard(sub)
                     Text(
-                        sub.url, color = c.hint, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(horizontal = 30.dp, vertical = 2.dp)
+                        sub.url, color = c.hint, fontSize = 11.sp, fontFamily = FontFamily.Monospace,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
                     )
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         MiniAction(RayIcons.Refresh, "Обновить", c.accent) { scope.launch { Actions.updateSub(sub) } }
                         MiniAction(RayIcons.Copy, "URL", c.accent) {
                             clipboard.setText(AnnotatedString(sub.url))
@@ -98,7 +105,6 @@ fun SubsScreen(onBack: () -> Unit) {
                         }
                         MiniAction(RayIcons.Trash, "Удалить", Bad) { toDelete = sub }
                     }
-                    Spacer(Modifier.height(10.dp))
                 }
             }
         }
@@ -117,16 +123,17 @@ fun SubsScreen(onBack: () -> Unit) {
     if (d != null) {
         AlertDialog(
             onDismissRequest = { toDelete = null },
-            icon = { IconBadge(RayIcons.Trash, Bad, 44.dp, 24.dp) },
-            title = { Text("Удалить подписку?") },
-            text = { Text("«${d.name}» и все её серверы будут удалены.") },
+            containerColor = c.surface,
+            icon = { IconTile(RayIcons.Trash, Bad, 46.dp, 24.dp) },
+            title = { Text("Удалить подписку?", color = c.text) },
+            text = { Text("«${d.name}» и все её серверы будут удалены.", color = c.hint) },
             confirmButton = {
                 TextButton(onClick = {
                     Repo.removeSub(d.id)
                     toDelete = null
                 }) { Text("Удалить", color = Bad) }
             },
-            dismissButton = { TextButton(onClick = { toDelete = null }) { Text("Отмена") } }
+            dismissButton = { TextButton(onClick = { toDelete = null }) { Text("Отмена", color = c.hint) } }
         )
     }
 }
@@ -147,6 +154,7 @@ fun AppsScreen(onBack: () -> Unit) {
     val bottom = navBottom() + 24.dp
     val list = rememberLazyListState()
     val scrolled by remember { derivedStateOf { list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > 100 } }
+    val mode = Repo.settings.perAppMode
 
     LaunchedEffect(Unit) {
         apps = withContext(Dispatchers.IO) {
@@ -182,7 +190,16 @@ fun AppsScreen(onBack: () -> Unit) {
         }
     ) {
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(top = top, bottom = bottom)) {
-            item(key = "title") { LargeTitle("Приложения", "Выбрано ${selected.size}") }
+            item(key = "title") {
+                ScreenTitle(
+                    "Приложения",
+                    "Выбрано ${selected.size} · " + when (mode) {
+                        1 -> "пойдут мимо VPN"
+                        2 -> "только они через VPN"
+                        else -> "режим «все через VPN»"
+                    }
+                )
+            }
             item(key = "search") {
                 InputField(
                     value = query,
@@ -194,8 +211,8 @@ fun AppsScreen(onBack: () -> Unit) {
                 )
             }
             item(key = "sys") {
-                Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).card(c)) {
-                    SettingSwitch(RayIcons.Settings, Gray, "Показывать системные", null, showSystem, divider = false) { showSystem = it }
+                Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).card(c, 18.dp)) {
+                    PrefSwitch(RayIcons.Settings, Gray, "Показывать системные", null, showSystem, divider = false) { showSystem = it }
                 }
             }
             if (all == null) {
@@ -208,32 +225,28 @@ fun AppsScreen(onBack: () -> Unit) {
                 itemsIndexed(shown, key = { _, a -> a.pkg }) { i, a ->
                     val first = i == 0
                     val last = i == shown.lastIndex
-                    val r = 14.dp
+                    val r = 18.dp
                     val shape = when {
                         first && last -> RoundedCornerShape(r)
                         first -> RoundedCornerShape(topStart = r, topEnd = r)
                         last -> RoundedCornerShape(bottomStart = r, bottomEnd = r)
                         else -> RectangleShape
                     }
-                    val dividerColor = c.divider
+                    val on = a.pkg in selected
                     Row(
-                        Modifier.animateItem().fillMaxWidth().padding(horizontal = 16.dp).clip(shape).background(c.card)
+                        Modifier.animateItem().fillMaxWidth().padding(horizontal = 16.dp).clip(shape).background(c.surface)
                             .clickable { toggle(a.pkg) }
-                            .drawBehind {
-                                if (!last) {
-                                    val y = size.height - 0.25.dp.toPx()
-                                    drawLine(dividerColor, Offset(52.dp.toPx(), y), Offset(size.width, y), 0.5.dp.toPx())
-                                }
-                            }
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                            .bottomLine(c.stroke, 54.dp, !last)
+                            .padding(horizontal = 14.dp, vertical = 11.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        CheckCircle(a.pkg in selected)
-                        Spacer(Modifier.width(14.dp))
+                        CheckCircle(on)
+                        Spacer(Modifier.width(16.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(a.label, color = c.text, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(a.pkg, color = c.hint, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(a.label, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(a.pkg, color = c.hint, fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
+                        if (a.system) Tag("SYS")
                     }
                 }
             }
@@ -272,17 +285,22 @@ fun LogsScreen(onBack: () -> Unit) {
             state = listState,
             contentPadding = PaddingValues(top = top, bottom = bottom)
         ) {
-            item(key = "title") { LargeTitle("Журнал", "${lines.size} записей") }
+            item(key = "title") { ScreenTitle("Журнал", "${lines.size} записей") }
             items(lines) { l ->
-                val err = l.contains("Ошибка") || l.contains("error", ignoreCase = true)
-                Row(Modifier.padding(horizontal = 16.dp, vertical = 1.dp)) {
-                    Box(
-                        Modifier.padding(top = 5.dp).size(5.dp).clip(RoundedCornerShape(50))
-                            .background(if (err) Bad else c.hint.copy(alpha = 0.5f))
-                    )
-                    Spacer(Modifier.width(8.dp))
+                val err = l.contains("Ошибка") || l.contains("error", ignoreCase = true) || l.contains("не прошёл")
+                val time = l.substringBefore("  ", "")
+                val msg = if (time.isEmpty()) l else l.substringAfter("  ")
+                Row(Modifier.padding(horizontal = 18.dp, vertical = 2.dp)) {
                     Text(
-                        l,
+                        time, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = c.hint,
+                        modifier = Modifier.width(60.dp)
+                    )
+                    Box(
+                        Modifier.padding(top = 5.dp, end = 8.dp).size(5.dp).clip(CircleShape)
+                            .background(if (err) Bad else c.accent.copy(alpha = 0.6f))
+                    )
+                    Text(
+                        msg,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
                         color = if (err) Bad else c.text
