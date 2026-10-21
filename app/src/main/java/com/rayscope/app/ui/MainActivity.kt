@@ -14,26 +14,43 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -44,10 +61,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -144,26 +162,54 @@ fun AppRoot() {
     val rootBackdrop = rememberBackdrop()
     RayBackground {
         BackdropSource(rootBackdrop, Modifier.fillMaxSize()) {
-            when (val r = route) {
-                is Route.Detail -> ServerDetailScreen(r.id, onBack = { route = Route.Tabs }, onConnect = connect)
-                Route.Apps -> AppsScreen(onBack = { route = Route.Tabs })
-                Route.Logs -> LogsScreen(onBack = { route = Route.Tabs })
-                Route.Subs -> SubsScreen(onBack = { route = Route.Tabs })
-                Route.Tabs -> when (tab) {
-                    0 -> DashboardScreen(onToggle = toggle, onGoServers = { tab = 1 }, onGoIp = { tab = 2 })
-                    1 -> ServersScreen(onOpen = { route = Route.Detail(it) }, onToggle = toggle)
-                    2 -> IpCheckScreen()
-                    else -> SettingsScreen(
-                        onApps = { route = Route.Apps },
-                        onLogs = { route = Route.Logs },
-                        onSubs = { route = Route.Subs }
-                    )
+            AnimatedContent(
+                targetState = route,
+                transitionSpec = {
+                    if (targetState != Route.Tabs) {
+                        (slideInHorizontally(spring(dampingRatio = 0.9f, stiffness = 380f)) { it / 3 } + fadeIn(tween(220))) togetherWith
+                            (slideOutHorizontally(tween(260)) { -it / 6 } + fadeOut(tween(200)))
+                    } else {
+                        (slideInHorizontally(tween(260)) { -it / 6 } + fadeIn(tween(220))) togetherWith
+                            (slideOutHorizontally(spring(dampingRatio = 0.9f, stiffness = 380f)) { it / 3 } + fadeOut(tween(200)))
+                    }
+                },
+                label = "route"
+            ) { r ->
+                when (r) {
+                    is Route.Detail -> ServerDetailScreen(r.id, onBack = { route = Route.Tabs }, onConnect = connect)
+                    Route.Apps -> AppsScreen(onBack = { route = Route.Tabs })
+                    Route.Logs -> LogsScreen(onBack = { route = Route.Tabs })
+                    Route.Subs -> SubsScreen(onBack = { route = Route.Tabs })
+                    Route.Tabs -> AnimatedContent(
+                        targetState = tab,
+                        transitionSpec = {
+                            (fadeIn(tween(220, delayMillis = 50)) + scaleIn(tween(260, delayMillis = 50), initialScale = 0.97f)) togetherWith
+                                fadeOut(tween(110))
+                        },
+                        label = "tab"
+                    ) { t ->
+                        when (t) {
+                            0 -> DashboardScreen(onToggle = toggle, onGoServers = { tab = 1 }, onGoIp = { tab = 2 })
+                            1 -> ServersScreen(onOpen = { route = Route.Detail(it) }, onToggle = toggle)
+                            2 -> IpCheckScreen()
+                            else -> SettingsScreen(
+                                onApps = { route = Route.Apps },
+                                onLogs = { route = Route.Logs },
+                                onSubs = { route = Route.Subs }
+                            )
+                        }
+                    }
                 }
             }
         }
-        if (route == Route.Tabs) {
+        AnimatedVisibility(
+            visible = route == Route.Tabs,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = slideInVertically(spring(dampingRatio = 0.8f, stiffness = 400f)) { it } + fadeIn(),
+            exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(160))
+        ) {
             CompositionLocalProvider(LocalBackdrop provides rootBackdrop) {
-                GlassTabBar(tab = tab, onTab = { tab = it }, modifier = Modifier.align(Alignment.BottomCenter))
+                GlassTabBar(tab = tab, onTab = { tab = it })
             }
         }
     }
@@ -171,34 +217,72 @@ fun AppRoot() {
 
 private data class TabItem(val icon: ImageVector, val label: String)
 
+/**
+ * Floating Liquid Glass tab bar. The selection pill moves like a drop of liquid: the leading edge
+ * runs ahead on a stiff spring while the trailing edge catches up on a soft one, so the pill
+ * stretches in flight and settles back into shape.
+ */
 @Composable
-private fun GlassTabBar(tab: Int, onTab: (Int) -> Unit, modifier: Modifier = Modifier) {
+private fun GlassTabBar(tab: Int, onTab: (Int) -> Unit) {
     val c = ray
     val items = listOf(
-        TabItem(Icons.Filled.Home, "Главная"),
-        TabItem(Icons.AutoMirrored.Filled.List, "Серверы"),
-        TabItem(Icons.Filled.LocationOn, "IP"),
-        TabItem(Icons.Filled.Settings, "Настройки"),
+        TabItem(RayIcons.Home, "Главная"),
+        TabItem(RayIcons.Servers, "Серверы"),
+        TabItem(RayIcons.Globe, "IP"),
+        TabItem(RayIcons.Settings, "Настройки"),
     )
-    GlassSurface(32.dp, modifier.navigationBarsPadding().padding(bottom = 8.dp)) {
-        Row(Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            items.forEachIndexed { i, item ->
-                val sel = tab == i
-                Column(
-                    Modifier
-                        .clip(RoundedCornerShape(28.dp))
-                        .background(if (sel) c.text.copy(alpha = if (c.dark) 0.12f else 0.07f) else Color.Transparent)
-                        .clickable { onTab(i) }
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(item.icon, contentDescription = item.label, tint = if (sel) c.accent else c.text, modifier = Modifier.size(22.dp))
-                    Text(
-                        item.label, fontSize = 10.sp, color = if (sel) c.accent else c.text,
-                        fontWeight = FontWeight.Medium, maxLines = 1
-                    )
+    val itemW = 76.dp
+    val prev = remember { IntArray(1) { tab } }
+    val movingRight = tab >= prev[0]
+    val lead = spring<Dp>(dampingRatio = 0.72f, stiffness = 700f)
+    val trail = spring<Dp>(dampingRatio = 0.72f, stiffness = 240f)
+    val left by animateDpAsState(itemW * tab, if (movingRight) trail else lead, label = "tabLeft")
+    val right by animateDpAsState(itemW * (tab + 1), if (movingRight) lead else trail, label = "tabRight")
+    SideEffect { prev[0] = tab }
+
+    GlassSurface(32.dp, Modifier.navigationBarsPadding().padding(bottom = 8.dp)) {
+        Box(Modifier.padding(4.dp)) {
+            Box(
+                Modifier.offset(x = left).width(right - left).height(54.dp)
+                    .clip(RoundedCornerShape(27.dp))
+                    .background(c.text.copy(alpha = if (c.dark) 0.13f else 0.07f))
+            )
+            Row(horizontalArrangement = Arrangement.Start) {
+                items.forEachIndexed { i, item ->
+                    TabButton(item, i == tab, Modifier.width(itemW).height(54.dp)) { onTab(i) }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TabButton(item: TabItem, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val c = ray
+    val color by animateColorAsState(if (selected) c.accent else c.text, tween(220), label = "tabColor")
+    val bump = remember { Animatable(1f) }
+    LaunchedEffect(selected) {
+        if (selected) {
+            bump.snapTo(0.78f)
+            bump.animateTo(1f, spring(dampingRatio = 0.38f, stiffness = 600f))
+        }
+    }
+    Column(
+        modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            item.icon, contentDescription = item.label, tint = color,
+            modifier = Modifier.size(24.dp).graphicsLayer {
+                scaleX = bump.value
+                scaleY = bump.value
+            }
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            item.label, fontSize = 10.sp, color = color,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1
+        )
     }
 }

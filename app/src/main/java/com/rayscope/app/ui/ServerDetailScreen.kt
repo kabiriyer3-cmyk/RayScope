@@ -5,15 +5,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -59,6 +58,8 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
     var testing by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var showRaw by remember { mutableStateOf(false) }
+    val scroll = rememberScrollState()
+    val scrolled by remember { derivedStateOf { scroll.value > 100 } }
 
     LaunchedEffect(s.id) {
         val (ips, ms) = Tester.resolve(s.address)
@@ -74,46 +75,59 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
     }
 
     val isActive = vpn.state == ConnState.CONNECTED && vpn.serverId == s.id
+    val spin = if (testing) spinAngle(800) else null
 
     Page(
+        title = s.cleanName(),
+        scrolled = scrolled,
         onBack = onBack,
         actions = {
-            ActionIcon(Icons.Filled.Star, "Избранное", tint = if (s.favorite) Mid else c.text) { Repo.toggleFavorite(s.id) }
-            ActionIcon(Icons.Filled.Delete, "Удалить", tint = Bad) { confirmDelete = true }
+            ActionIcon(
+                if (s.favorite) RayIcons.StarFilled else RayIcons.Star, "Избранное",
+                tint = if (s.favorite) Yellow else c.text
+            ) { Repo.toggleFavorite(s.id) }
+            ActionIcon(RayIcons.Trash, "Удалить", tint = Bad) { confirmDelete = true }
         }
     ) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
             Spacer(Modifier.height(pageTop()))
             LargeTitle(s.cleanName(), "${s.protocolLabel()} · ${s.network} · ${s.securityLabel()}", big = false)
 
-            Section("Состояние") {
-                Row(Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    FlagBox(s.flagEmoji(), 44.dp)
-                    Spacer(Modifier.width(10.dp))
+            Column(Modifier.appear(0).fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).card(c, 20.dp).padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    FlagBox(s.flagEmoji(), 52.dp)
+                    Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
                             when {
+                                isActive -> "Подключён сейчас"
                                 s.isWorking -> "Сервер рабочий"
-                                s.isDead -> "Сервер не отвечает"
+                                s.isDead -> "Не отвечает"
                                 else -> "Ещё не проверялся"
                             },
-                            color = delayColor(s.delay), fontSize = 16.sp, fontWeight = FontWeight.SemiBold
+                            color = if (isActive) Good else delayColor(s.delay), fontSize = 16.sp, fontWeight = FontWeight.SemiBold
                         )
-                        Text("${s.address}:${s.port}", color = c.hint, fontSize = 13.sp)
+                        Text("${s.address}:${s.port}", color = c.hint, fontSize = 13.sp, maxLines = 1)
                     }
-                    DelayBadge(s.delay)
+                    Column(horizontalAlignment = Alignment.End) {
+                        TickerText(if (s.delay >= 0) "${s.delay}" else "—", delayColor(s.delay), 24.sp, FontWeight.Bold)
+                        Text("ms", color = c.hint, fontSize = 11.sp)
+                    }
                 }
-                RowDivider()
-                KV("Задержка через прокси", Fmt.ms(s.delay))
-                KV("TCP-пинг", if (s.protocol == "hysteria2") "н/д (UDP)" else Fmt.ms(s.tcpPing))
-                KV("Последняя проверка", if (s.lastTested > 0) Fmt.date(s.lastTested) else "никогда")
-                val stab = s.stability()
-                KV("Стабильность", if (stab < 0) "—" else "$stab% · ${s.successCount} ок / ${s.failCount} сбоев")
-                if (s.lastError.isNotEmpty()) KV("Ошибка", s.lastError, Bad)
-                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (s.lastError.isNotEmpty()) {
+                    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(RayIcons.Alert, contentDescription = null, tint = Bad, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text(s.lastError, color = Bad, fontSize = 12.sp)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PillButton(
                         if (testing) "Тест…" else "Проверить",
                         enabled = !testing,
+                        icon = RayIcons.Refresh,
+                        iconModifier = Modifier.graphicsLayer { rotationZ = spin?.value ?: 0f },
                         onClick = {
                             testing = true
                             scope.launch {
@@ -128,6 +142,7 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                         primary = true,
                         color = if (isActive) Good else c.accent,
                         enabled = !isActive,
+                        icon = if (isActive) RayIcons.ShieldCheck else RayIcons.Power,
                         onClick = {
                             Repo.select(s.id)
                             if (vpn.state == ConnState.CONNECTED) RayVpnService.switchServer() else onConnect()
@@ -137,18 +152,29 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                 }
             }
 
+            Section("Проверки", modifier = Modifier.appear(1), padded = false) {
+                SettingRow(RayIcons.Activity, Good, "Задержка через прокси", value = Fmt.ms(s.delay))
+                SettingRow(RayIcons.Signal, Blue, "TCP-пинг", value = if (s.protocol == "hysteria2") "н/д (UDP)" else Fmt.ms(s.tcpPing))
+                val stab = s.stability()
+                SettingRow(
+                    RayIcons.Gauge, Orange, "Стабильность",
+                    value = if (stab < 0) "—" else "$stab% · ${s.successCount}/${s.successCount + s.failCount}"
+                )
+                SettingRow(RayIcons.Clock, Gray, "Последняя проверка", value = if (s.lastTested > 0) Fmt.date(s.lastTested) else "никогда", divider = false)
+            }
+
             val warns = s.warnings()
-            Section("Аудит конфигурации") {
+            Section("Аудит конфигурации", modifier = Modifier.appear(2), padded = false) {
                 if (warns.isEmpty()) {
-                    Text("✓ Явных проблем не найдено", color = Good, fontSize = 14.sp, modifier = Modifier.padding(vertical = 8.dp))
+                    SettingRow(RayIcons.ShieldCheck, Good, "Явных проблем не найдено", divider = false)
                 } else {
-                    warns.forEach { w ->
-                        Text("⚠ $w", color = Mid, fontSize = 14.sp, modifier = Modifier.padding(vertical = 5.dp))
+                    warns.forEachIndexed { i, w ->
+                        SettingRow(RayIcons.Alert, Orange, w, divider = i != warns.lastIndex)
                     }
                 }
             }
 
-            Section("Параметры") {
+            Section("Параметры", modifier = Modifier.appear(3)) {
                 KV("Протокол", s.protocolLabel())
                 KV("Адрес", s.address)
                 KV("Порт", s.port.toString())
@@ -174,7 +200,7 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                 KV("Источник", sub?.name ?: "добавлен вручную")
             }
 
-            Section("Сервер в сети") {
+            Section("Сервер в сети", modifier = Modifier.appear(4)) {
                 KV("IP (DNS)", resolved ?: "определяю…")
                 val g = geo
                 val ge = geoErr
@@ -191,27 +217,27 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                 }
             }
 
-            Section("Ссылка и конфиг") {
+            Section("Ссылка и конфиг", modifier = Modifier.appear(5)) {
                 val raw = s.rawLink
                 Text(
                     if (showRaw || raw.length <= 70) raw else raw.take(70) + "…",
                     color = c.hint, fontSize = 12.sp,
                     modifier = Modifier.padding(vertical = 8.dp).clickable { showRaw = !showRaw }
                 )
-                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PillButton("Копировать", onClick = {
+                Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    MiniAction(RayIcons.Copy, "Копия", c.accent) {
                         clipboard.setText(AnnotatedString(raw))
                         toast("Ссылка скопирована")
-                    }, modifier = Modifier.weight(1f))
-                    PillButton("Поделиться", onClick = {
+                    }
+                    MiniAction(RayIcons.Share, "Поделиться", c.accent) {
                         try {
                             val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, raw)
                             ctx.startActivity(Intent.createChooser(i, "Поделиться"))
                         } catch (e: Exception) {
                             toast("Не удалось поделиться")
                         }
-                    }, modifier = Modifier.weight(1f))
-                    PillButton("JSON", onClick = {
+                    }
+                    MiniAction(RayIcons.Code, "JSON", c.accent) {
                         try {
                             val json = JSONObject(XrayConfig.build(s, Repo.settings, tun = false)).toString(2)
                             clipboard.setText(AnnotatedString(json))
@@ -219,7 +245,7 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                         } catch (e: Exception) {
                             toast("Ошибка: ${e.message}")
                         }
-                    }, modifier = Modifier.weight(1f))
+                    }
                 }
             }
             Spacer(Modifier.navigationBarsPadding().height(24.dp))
@@ -229,6 +255,7 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
+            icon = { IconBadge(RayIcons.Trash, Bad, 44.dp, 24.dp) },
             title = { Text("Удалить сервер?") },
             text = { Text(s.cleanName()) },
             confirmButton = {

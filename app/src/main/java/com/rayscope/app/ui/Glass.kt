@@ -5,11 +5,11 @@
  * AndroidLiquidGlass / Backdrop library (https://github.com/Kyant0/AndroidLiquidGlass),
  * Copyright 2025 Kyant, licensed under the Apache License, Version 2.0.
  *
- * How it works: the screen content is recorded into a GraphicsLayer (the "backdrop").
- * Every glass element re-draws the part of that backdrop that lies under it through an
- * AGSL RuntimeShader that bends pixels near the rounded edge, like a real glass lens,
- * then adds a light-angle dependent specular rim. No blur, no gradients.
- * Real refraction needs Android 13+ (RuntimeShader); older devices get a clean solid fallback.
+ * The screen content is recorded into a GraphicsLayer (the "backdrop"). Each glass element
+ * redraws the part of the backdrop under it through an AGSL RuntimeShader that bends pixels near
+ * the rounded edge like a lens, then adds a light-angle dependent specular rim. No blur.
+ * Glass is only used for the floating navigation layer (tab bar, toolbar, FAB), like on iOS.
+ * Real refraction needs Android 13+; older devices get a solid fallback.
  */
 package com.rayscope.app.ui
 
@@ -18,8 +18,14 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.RuntimeShader
 import android.os.Build
 import androidx.annotation.RequiresApi
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -27,8 +33,6 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -58,6 +62,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -107,15 +112,15 @@ private class GlassPos {
 }
 
 /**
- * Clear Liquid Glass: refracts whatever is under the element (lens bending at the edges),
- * slightly boosts its saturation and draws a specular rim lit from the top-left.
+ * Clear Liquid Glass: refracts what is under the element (lens bending at the edges),
+ * boosts saturation slightly, adds a thin surface tint and a specular rim lit from the top-left.
  */
 @Composable
 fun Modifier.liquidGlass(
     cornerRadius: Dp,
     tint: Color = Color.Unspecified,
-    refractionHeight: Dp = 14.dp,
-    refractionAmount: Dp = 24.dp,
+    refractionHeight: Dp = 12.dp,
+    refractionAmount: Dp = 20.dp,
 ): Modifier {
     val c = ray
     val backdrop = LocalBackdrop.current
@@ -125,11 +130,11 @@ fun Modifier.liquidGlass(
     val shape = RoundedCornerShape(cornerRadius)
     return this
         .shadow(
-            elevation = if (c.dark) 6.dp else 12.dp,
+            elevation = if (c.dark) 8.dp else 14.dp,
             shape = shape,
             clip = false,
-            ambientColor = Color.Black.copy(alpha = 0.12f),
-            spotColor = Color.Black.copy(alpha = 0.20f)
+            ambientColor = Color.Black.copy(alpha = 0.10f),
+            spotColor = Color.Black.copy(alpha = if (c.dark) 0.35f else 0.16f)
         )
         .onGloballyPositioned { pos.origin = it.positionInRoot() }
         .drawBehind {
@@ -159,7 +164,7 @@ fun Modifier.liquidGlass(
             }
             drawRoundRect(fill, cornerRadius = cr)
 
-            val sw = 1.3.dp.toPx()
+            val sw = 1.2.dp.toPx()
             val inset = Offset(sw / 2f, sw / 2f)
             val inner = Size(size.width - sw, size.height - sw)
             val icr = CornerRadius((r - sw / 2f).coerceAtLeast(0f))
@@ -169,15 +174,15 @@ fun Modifier.liquidGlass(
                     topLeft = inset, size = inner, cornerRadius = icr, style = Stroke(sw)
                 )
             } else {
-                drawRoundRect(c.rim.copy(alpha = c.rim.alpha * 0.35f), topLeft = inset, size = inner, cornerRadius = icr, style = Stroke(sw))
+                drawRoundRect(c.rim.copy(alpha = c.rim.alpha * 0.30f), topLeft = inset, size = inner, cornerRadius = icr, style = Stroke(sw))
             }
             if (!c.dark) {
-                drawRoundRect(Color.Black.copy(alpha = 0.07f), cornerRadius = cr, style = Stroke(0.5.dp.toPx()))
+                drawRoundRect(Color.Black.copy(alpha = 0.06f), cornerRadius = cr, style = Stroke(0.5.dp.toPx()))
             }
         }
 }
 
-/** A glass surface that wobbles (scales up) while pressed, like iOS 26 controls. */
+/** A glass surface that swells while pressed, like iOS 26 controls. */
 @Composable
 fun GlassSurface(
     cornerRadius: Dp,
@@ -217,11 +222,13 @@ fun pageTop(): Dp = WindowInsets.statusBars.asPaddingValues().calculateTopPaddin
 fun navBottom(): Dp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
 /**
- * Screen with iOS 26 style chrome: content scrolls under floating Liquid Glass buttons
- * (back on the left, grouped actions in one glass capsule on the right).
+ * iOS 26 style screen: content scrolls under floating Liquid Glass controls. The large title
+ * lives in the content; once it scrolls away a compact glass title capsule pops in.
  */
 @Composable
 fun Page(
+    title: String? = null,
+    scrolled: Boolean = false,
     onBack: (() -> Unit)? = null,
     actions: (@Composable RowScope.() -> Unit)? = null,
     overlay: @Composable BoxScope.() -> Unit = {},
@@ -233,18 +240,32 @@ fun Page(
         BackdropSource(bd, Modifier.fillMaxSize()) { content() }
         CompositionLocalProvider(LocalBackdrop provides bd) {
             Box(Modifier.fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars).background(c.bg))
-            Row(
-                Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Box(
+                Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp).height(44.dp)
             ) {
                 if (onBack != null) {
-                    GlassSurface(22.dp, Modifier.size(44.dp), onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад", tint = c.text, modifier = Modifier.size(20.dp))
+                    GlassSurface(22.dp, Modifier.align(Alignment.CenterStart).size(44.dp), onClick = onBack) {
+                        Icon(RayIcons.Back, contentDescription = "Назад", tint = c.text, modifier = Modifier.size(22.dp))
                     }
                 }
-                Spacer(Modifier.weight(1f))
+                if (title != null) {
+                    AnimatedVisibility(
+                        visible = scrolled,
+                        modifier = Modifier.align(Alignment.Center),
+                        enter = fadeIn(tween(180)) + scaleIn(spring(dampingRatio = 0.6f, stiffness = 500f), initialScale = 0.8f),
+                        exit = fadeOut(tween(140)) + scaleOut(tween(140), targetScale = 0.9f)
+                    ) {
+                        GlassSurface(19.dp, Modifier.height(38.dp).widthIn(max = 190.dp)) {
+                            Text(
+                                title, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                        }
+                    }
+                }
                 if (actions != null) {
-                    GlassSurface(22.dp, Modifier.height(44.dp)) {
+                    GlassSurface(22.dp, Modifier.align(Alignment.CenterEnd).height(44.dp)) {
                         Row(Modifier.padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically, content = actions)
                     }
                 }
@@ -260,23 +281,14 @@ fun ActionIcon(
     desc: String,
     tint: Color = ray.text,
     enabled: Boolean = true,
+    iconModifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     Box(
         Modifier.size(40.dp).clip(CircleShape).clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, contentDescription = desc, tint = if (enabled) tint else tint.copy(alpha = 0.35f), modifier = Modifier.size(20.dp))
-    }
-}
-
-@Composable
-fun ActionGlyph(glyph: String, onClick: () -> Unit) {
-    Box(
-        Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(glyph, color = ray.text, fontSize = 18.sp)
+        Icon(icon, contentDescription = desc, tint = if (enabled) tint else tint.copy(alpha = 0.35f), modifier = iconModifier.size(21.dp))
     }
 }
 
@@ -296,7 +308,7 @@ fun ActionText(text: String, color: Color = ray.accent, onClick: () -> Unit) {
 private class Lens {
     private val refraction = RuntimeShader(REFRACTION_AGSL)
     private val rim = RuntimeShader(HIGHLIGHT_AGSL)
-    private val saturate = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(1.5f) })
+    private val saturate = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(1.4f) })
 
     fun effect(w: Float, h: Float, r: Float, height: Float, amount: Float): androidx.compose.ui.graphics.RenderEffect {
         refraction.setFloatUniform("size", w, h)
@@ -378,6 +390,6 @@ half4 main(float2 coord) {
     float gr = min(cornerRadius * 1.5, min(halfSize.x, halfSize.y));
     float2 g = gradSdRoundedRect(p, halfSize, gr);
     float k = pow(abs(dot(g, lightDir)), 1.6);
-    return color * half(0.18 + 0.82 * k);
+    return color * half(0.15 + 0.85 * k);
 }
 """

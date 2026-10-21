@@ -7,13 +7,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.rayscope.app.BuildConfig
 import com.rayscope.app.core.ConnState
 import com.rayscope.app.core.CoreManager
@@ -42,61 +40,55 @@ fun SettingsScreen(onApps: () -> Unit, onLogs: () -> Unit, onSubs: () -> Unit) {
     var failover by remember { mutableStateOf(st.autoFailover) }
     var perAppMode by remember { mutableIntStateOf(st.perAppMode) }
     val perAppCount = st.perAppSet.size
+    val scroll = rememberScrollState()
+    val scrolled by remember { derivedStateOf { scroll.value > 120 } }
 
-    Page {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+    Page(title = "Настройки", scrolled = scrolled) {
+        Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
             Spacer(Modifier.height(pageTop()))
             LargeTitle(
                 "Настройки",
                 if (vpn.state == ConnState.CONNECTED) "Параметры VPN применятся после переподключения" else null
             )
 
-            Section("Оформление", contentPadding = PaddingValues(12.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("Система", "Светлая", "Тёмная").forEachIndexed { i, t ->
-                        Chip(t, selected = theme == i, onCard = true) { Repo.setTheme(i) }
-                    }
-                }
+            Section("Оформление", modifier = Modifier.appear(0), padded = false) {
+                SettingRow(
+                    if (theme == 2 || (theme == 0 && c.dark)) RayIcons.Moon else RayIcons.Sun,
+                    Indigo, "Тема", divider = false
+                )
+                Segmented(
+                    listOf("Система", "Светлая", "Тёмная"),
+                    selected = theme,
+                    onSelect = { Repo.setTheme(it) },
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
+                )
             }
 
-            Section("Подписки") {
-                NavRow("Управление подписками", "${subs.size}", onClick = onSubs)
-                RowDivider()
-                SwitchRow("Обновлять при запуске", null, autoUpd) {
+            Section("Подписки", modifier = Modifier.appear(1), padded = false) {
+                SettingRow(RayIcons.Package, Blue, "Подписки", value = "${subs.size}", chevron = true, onClick = onSubs)
+                SettingSwitch(RayIcons.Refresh, Good, "Обновлять при запуске", null, autoUpd) {
                     autoUpd = it
                     st.autoUpdateSubs = it
                 }
-                RowDivider()
-                SwitchRow("Проверять после обновления", "Сразу отделить рабочие от нерабочих", testAfter) {
+                SettingSwitch(RayIcons.Check, Teal, "Проверять после обновления", "Сразу отделить рабочие от нерабочих", testAfter, divider = false) {
                     testAfter = it
                     st.testAfterUpdate = it
                 }
-                InputField(
-                    value = ua,
-                    onValueChange = {
-                        ua = it
-                        st.userAgent = it.trim()
-                    },
-                    placeholder = "v2rayNG/1.10.20",
-                    label = "User-Agent для подписок",
-                    modifier = Modifier.padding(bottom = 10.dp)
-                )
+                Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
+                    InputField(
+                        value = ua,
+                        onValueChange = {
+                            ua = it
+                            st.userAgent = it.trim()
+                        },
+                        placeholder = "v2rayNG/1.10.20",
+                        label = "User-Agent"
+                    )
+                }
             }
 
-            Section("Проверка серверов") {
-                InputField(
-                    value = testUrl,
-                    onValueChange = {
-                        testUrl = it
-                        st.testUrl = it.trim()
-                    },
-                    placeholder = "https://www.gstatic.com/generate_204",
-                    label = "URL для теста задержки"
-                )
-                Row(Modifier.fillMaxWidth().padding(top = 12.dp)) {
-                    Text("Параллельных проверок", color = c.text, fontSize = 16.sp, modifier = Modifier.weight(1f))
-                    Text("${conc.toInt()}", color = c.accent, fontSize = 16.sp)
-                }
+            Section("Проверка серверов", modifier = Modifier.appear(2), padded = false) {
+                SettingRow(RayIcons.Activity, Orange, "Параллельных проверок", value = "${conc.toInt()}", divider = false)
                 Slider(
                     value = conc,
                     onValueChange = {
@@ -105,90 +97,108 @@ fun SettingsScreen(onApps: () -> Unit, onLogs: () -> Unit, onSubs: () -> Unit) {
                     },
                     valueRange = 1f..32f,
                     steps = 30,
-                    colors = SliderDefaults.colors(thumbColor = c.accent, activeTrackColor = c.accent, inactiveTrackColor = c.field)
+                    colors = SliderDefaults.colors(thumbColor = c.accent, activeTrackColor = c.accent, inactiveTrackColor = c.field),
+                    modifier = Modifier.padding(horizontal = 16.dp)
                 )
-                RowDivider()
-                SwitchRow("Авто-переключение при сбое", "Если сервер упал, перейти на самый быстрый рабочий", failover) {
+                SettingSwitch(RayIcons.Bolt, Yellow, "Авто-переключение", "Если сервер упал, перейти на самый быстрый", failover, divider = false) {
                     failover = it
                     st.autoFailover = it
                 }
+                Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
+                    InputField(
+                        value = testUrl,
+                        onValueChange = {
+                            testUrl = it
+                            st.testUrl = it.trim()
+                        },
+                        placeholder = "https://www.gstatic.com/generate_204",
+                        label = "URL для теста задержки",
+                        leading = RayIcons.Link
+                    )
+                }
             }
 
-            Section("VPN") {
-                InputField(
-                    value = dns,
-                    onValueChange = {
-                        dns = it
-                        st.dns = it
-                    },
-                    placeholder = "1.1.1.1, 8.8.8.8",
-                    label = "DNS-серверы"
-                )
-                InputField(
-                    value = mtu,
-                    onValueChange = { v ->
-                        mtu = v.filter { it.isDigit() }.take(5)
-                        val n = mtu.toIntOrNull()
-                        if (n != null && n in 1280..9000) st.mtu = n
-                    },
-                    placeholder = "1500",
-                    label = "MTU (1280–9000)",
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                RowDivider()
-                SwitchRow("Локальная сеть напрямую", "192.168.x.x, 10.x.x.x мимо VPN", bypassLan) {
+            Section("VPN", modifier = Modifier.appear(3), padded = false) {
+                SettingSwitch(RayIcons.Wifi, Indigo, "Локальная сеть напрямую", "192.168.x.x, 10.x.x.x мимо VPN", bypassLan) {
                     bypassLan = it
                     st.bypassLan = it
                 }
-                RowDivider()
-                SwitchRow("Маршрутизировать IPv6", "Защита от утечки IPv6", ipv6) {
+                SettingSwitch(RayIcons.Globe, Blue, "Маршрутизировать IPv6", "Защита от утечки IPv6", ipv6) {
                     ipv6 = it
                     st.ipv6 = it
                 }
-                RowDivider()
-                SwitchRow("Sniffing", "Определять домен по TLS/HTTP", sniff) {
+                SettingSwitch(RayIcons.Eye, Gray, "Sniffing", "Определять домен по TLS/HTTP", sniff, divider = false) {
                     sniff = it
                     st.sniffing = it
+                }
+                Row(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    InputField(
+                        value = dns,
+                        onValueChange = {
+                            dns = it
+                            st.dns = it
+                        },
+                        placeholder = "1.1.1.1, 8.8.8.8",
+                        label = "DNS",
+                        modifier = Modifier.weight(0.65f)
+                    )
+                    InputField(
+                        value = mtu,
+                        onValueChange = { v ->
+                            mtu = v.filter { it.isDigit() }.take(5)
+                            val n = mtu.toIntOrNull()
+                            if (n != null && n in 1280..9000) st.mtu = n
+                        },
+                        placeholder = "1500",
+                        label = "MTU",
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(0.35f)
+                    )
                 }
             }
 
             Section(
                 "Раздельное туннелирование",
+                modifier = Modifier.appear(4),
+                padded = false,
                 footer = when (perAppMode) {
                     1 -> "Выбранные приложения пойдут мимо VPN"
                     2 -> "Через VPN пойдут только выбранные приложения"
                     else -> "Все приложения идут через VPN"
                 }
             ) {
-                Row(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("Все", "Исключить", "Только").forEachIndexed { i, t ->
-                        Chip(t, selected = perAppMode == i, onCard = true) {
-                            perAppMode = i
-                            st.perAppMode = i
-                        }
-                    }
-                }
+                Segmented(
+                    listOf("Все", "Исключить", "Только"),
+                    selected = perAppMode,
+                    onSelect = {
+                        perAppMode = it
+                        st.perAppMode = it
+                    },
+                    modifier = Modifier.padding(16.dp)
+                )
                 RowDivider()
-                NavRow("Выбрать приложения", "$perAppCount", enabled = perAppMode != 0, onClick = onApps)
+                SettingRow(
+                    RayIcons.Apps, Purple, "Выбрать приложения", value = "$perAppCount",
+                    chevron = true, enabled = perAppMode != 0, divider = false, onClick = onApps
+                )
             }
 
             Section(
                 "Система",
+                modifier = Modifier.appear(5),
+                padded = false,
                 footer = "Включите «Постоянная VPN» и «Блокировать без VPN», чтобы трафик не утекал при обрыве."
             ) {
-                NavRow("Always-on VPN и Kill switch") {
+                SettingRow(RayIcons.Lock, Bad, "Always-on VPN и Kill switch", chevron = true, onClick = {
                     try {
                         ctx.startActivity(Intent(android.provider.Settings.ACTION_VPN_SETTINGS))
                     } catch (e: Exception) {
                         toast("Не удалось открыть настройки VPN")
                     }
-                }
-                RowDivider()
-                NavRow("Журнал событий", onClick = onLogs)
-                RowDivider()
-                KV("Ядро", CoreManager.version())
-                KV("Версия", BuildConfig.VERSION_NAME)
+                })
+                SettingRow(RayIcons.Logs, Gray, "Журнал событий", chevron = true, onClick = onLogs)
+                SettingRow(RayIcons.Code, Teal, "Ядро", value = CoreManager.version())
+                SettingRow(RayIcons.Info, Blue, "Версия", value = BuildConfig.VERSION_NAME, divider = false)
             }
             TabBottomSpacer()
         }
