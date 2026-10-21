@@ -35,6 +35,11 @@ class Settings(ctx: Context) {
         get() = p.getInt("conc", 8)
         set(v) = putInt("conc", v)
 
+    /** 0 = system, 1 = light, 2 = dark */
+    var themeMode: Int
+        get() = p.getInt("theme", 0)
+        set(v) = putInt("theme", v)
+
     /** 0 = all apps, 1 = bypass selected apps, 2 = only selected apps */
     var perAppMode: Int
         get() = p.getInt("perAppMode", 0)

@@ -1,5 +1,3 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-
 package com.rayscope.app.ui
 
 import androidx.compose.animation.animateColorAsState
@@ -10,13 +8,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -32,6 +32,7 @@ import com.rayscope.app.core.VpnState
 import com.rayscope.app.core.XrayConfig
 import com.rayscope.app.data.Actions
 import com.rayscope.app.data.Repo
+import com.rayscope.app.model.Server
 import com.rayscope.app.net.IpCheckModel
 import com.rayscope.app.net.Tester
 import com.rayscope.app.util.Fmt
@@ -43,6 +44,7 @@ import kotlin.math.abs
 
 @Composable
 fun DashboardScreen(onToggle: () -> Unit, onGoServers: () -> Unit, onGoIp: () -> Unit) {
+    val c = ray
     val vpn by VpnState.status.collectAsState()
     val servers by Repo.servers.collectAsState()
     val selectedId by Repo.selectedId.collectAsState()
@@ -62,141 +64,89 @@ fun DashboardScreen(onToggle: () -> Unit, onGoServers: () -> Unit, onGoIp: () ->
     var speedText by remember { mutableStateOf<String?>(null) }
     var speedRunning by remember { mutableStateOf(false) }
     var bestRunning by remember { mutableStateOf(false) }
-    val ringColor by animateColorAsState(
+    val orbColor by animateColorAsState(
         targetValue = when {
             connected -> Good
-            busy -> Mid
-            else -> Idle
+            busy -> Orange
+            else -> c.accent
         },
-        label = "ring"
+        label = "orb"
     )
+    val stateText = when (vpn.state) {
+        ConnState.CONNECTED -> "Подключено"
+        ConnState.CONNECTING -> "Подключение…"
+        ConnState.STOPPING -> "Отключение…"
+        ConnState.STOPPED -> "Не подключено"
+    }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        TopAppBar(
-            title = { Text("RayScope", fontWeight = FontWeight.Bold) },
-            actions = {
-                if (connected) {
-                    Text(Fmt.duration(now - vpn.since), modifier = Modifier.padding(end = 16.dp), color = Good)
-                }
-            }
-        )
+        Header("RayScope", subtitle = if (connected) "Защищено · ${Fmt.duration(now - vpn.since)}" else stateText)
 
-        Box(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp), contentAlignment = Alignment.Center) {
-            Box(
-                Modifier
-                    .size(176.dp)
-                    .clip(CircleShape)
-                    .background(ringColor.copy(alpha = 0.14f))
-                    .border(4.dp, ringColor, CircleShape)
-                    .clickable(enabled = !busy) { onToggle() },
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("⏻", fontSize = 54.sp, color = ringColor)
-                    Text(
-                        when (vpn.state) {
-                            ConnState.CONNECTED -> "Подключено"
-                            ConnState.CONNECTING -> "Подключение…"
-                            ConnState.STOPPING -> "Отключение…"
-                            ConnState.STOPPED -> "Нажмите, чтобы подключиться"
-                        },
-                        style = MaterialTheme.typography.labelLarge,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 18.dp)
-                    )
-                }
-            }
-        }
-
-        SectionCard(title = "Сервер") {
-            if (server == null) {
-                Text("Нет серверов", style = MaterialTheme.typography.bodyMedium)
-                TextButton(onClick = onGoServers) { Text("Добавить →") }
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(server.flagEmoji().ifEmpty { "🌐" }, fontSize = 28.sp)
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(server.cleanName(), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            "${server.protocolLabel()} · ${server.network} · ${server.securityLabel()}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    DelayBadge(server.delay)
-                }
-                TextButton(onClick = onGoServers) { Text("Сменить сервер →") }
-            }
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp)
+                .glass(c, RoundedCornerShape(26.dp)).padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            ConnectOrb(orbColor, enabled = !busy, onClick = onToggle)
+            Spacer(Modifier.height(10.dp))
+            Text(stateText, color = c.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                if (connected) Fmt.duration(now - vpn.since) else "Нажмите на кнопку",
+                color = if (connected) Good else c.hint, fontSize = 13.sp, fontWeight = FontWeight.Medium
+            )
             if (vpn.error.isNotEmpty()) {
-                Text("⚠ ${vpn.error}", color = Bad, style = MaterialTheme.typography.bodySmall)
+                Text("⚠ ${vpn.error}", color = Bad, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
             }
+            Spacer(Modifier.height(12.dp))
+            ServerPill(server, onGoServers)
         }
 
         if (connected) {
-            Row(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatTile("↓ Загрузка", Fmt.speed(vpn.downSpeed), Modifier.weight(1f), Good)
-                StatTile("↑ Отдача", Fmt.speed(vpn.upSpeed), Modifier.weight(1f), Blue)
-            }
-            Row(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatTile("Получено", Fmt.bytes(vpn.totalDown), Modifier.weight(1f))
-                StatTile("Отправлено", Fmt.bytes(vpn.totalUp), Modifier.weight(1f))
-            }
-            Row(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatTile("Пинг (live)", Fmt.ms(vpn.livePing), Modifier.weight(1f), delayColor(vpn.livePing))
-                StatTile("Пик ↓", Fmt.speed(vpn.peakDown), Modifier.weight(1f))
-            }
-            SectionCard(title = "Трафик за 60 сек") {
+            Section("Статистика") {
+                Row(Modifier.fillMaxWidth()) {
+                    Stat("↓ Загрузка", Fmt.speed(vpn.downSpeed), Good)
+                    Stat("↑ Отдача", Fmt.speed(vpn.upSpeed), Blue)
+                    Stat("Пинг", Fmt.ms(vpn.livePing), delayColor(vpn.livePing))
+                }
+                RowDivider()
+                Row(Modifier.fillMaxWidth()) {
+                    Stat("Получено", Fmt.bytes(vpn.totalDown))
+                    Stat("Отправлено", Fmt.bytes(vpn.totalUp))
+                    Stat("Пик ↓", Fmt.speed(vpn.peakDown))
+                }
+                Spacer(Modifier.height(4.dp))
                 SpeedGraph(vpn.history)
-                Row {
-                    Text("— загрузка  ", color = Good, style = MaterialTheme.typography.labelSmall)
-                    Text("— отдача", color = Blue, style = MaterialTheme.typography.labelSmall)
+                Row(Modifier.padding(vertical = 4.dp)) {
+                    Text("● загрузка   ", color = Good, fontSize = 11.sp)
+                    Text("● отдача", color = Blue, fontSize = 11.sp)
                 }
             }
             if (vpn.pingHistory.isNotEmpty()) {
-                SectionCard(title = "Контрольный пинг (каждые 30 сек)") {
+                Section("Контрольный пинг") {
                     val okList = vpn.pingHistory.filter { it >= 0 }
                     val fails = vpn.pingHistory.size - okList.size
-                    KV("Последние", vpn.pingHistory.takeLast(10).joinToString("  ") { if (it < 0) "✕" else "$it" })
+                    KV("Последние", vpn.pingHistory.takeLast(8).joinToString(" ") { if (it < 0) "✕" else "$it" })
                     KV("Средний", if (okList.isEmpty()) "—" else "${okList.average().toLong()} ms")
-                    KV(
-                        "Джиттер",
-                        if (okList.size < 2) "—" else "${okList.zipWithNext { a, b -> abs(a - b) }.average().toLong()} ms"
-                    )
+                    KV("Джиттер", if (okList.size < 2) "—" else "${okList.zipWithNext { a, b -> abs(a - b) }.average().toLong()} ms")
                     KV("Потери", "${fails * 100 / vpn.pingHistory.size}%", if (fails > 0) Bad else Good)
                 }
             }
         }
 
-        if (server != null) {
-            SectionCard(title = "Детали подключения") {
-                KV("Адрес", "${server.address}:${server.port}")
-                KV("Транспорт", server.network + (if (server.path.isNotEmpty()) "  ${server.path}" else ""))
-                KVIf("SNI", server.sni)
-                KV("Защита", server.securityLabel())
-                val exit = ip.vpn
-                if (connected && ip.wasConnected && exit != null) {
-                    KV("Выходной IP", "${Fmt.flag(exit.countryCode)} ${exit.ip}")
-                }
-                KV("Локальный SOCKS5", "127.0.0.1:${XrayConfig.SOCKS_PORT}")
-                KV("Локальный HTTP", "127.0.0.1:${XrayConfig.HTTP_PORT}")
-                if (vpn.switches > 0) KV("Переключений за сессию", "${vpn.switches}")
-                KV("Ядро", CoreManager.version())
-            }
-        }
-
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            OutlinedButton(
+            GlassButton(
+                "Проверить IP",
                 onClick = {
                     onGoIp()
                     scope.launch { IpCheckModel.run() }
                 },
                 modifier = Modifier.weight(1f)
-            ) { Text("Проверить IP") }
-            OutlinedButton(
+            )
+            GlassButton(
+                if (speedRunning) "Тест…" else "Скорость",
                 enabled = !speedRunning,
                 onClick = {
                     speedRunning = true
@@ -213,9 +163,11 @@ fun DashboardScreen(onToggle: () -> Unit, onGoServers: () -> Unit, onGoIp: () ->
                     }
                 },
                 modifier = Modifier.weight(1f)
-            ) { Text(if (speedRunning) "Тест…" else "Тест скорости") }
+            )
         }
-        Button(
+        GlassButton(
+            if (bestRunning) "Ищу лучший сервер…" else "⚡ Лучший сервер",
+            primary = true,
             enabled = !bestRunning && !busy,
             onClick = {
                 bestRunning = true
@@ -231,27 +183,113 @@ fun DashboardScreen(onToggle: () -> Unit, onGoServers: () -> Unit, onGoIp: () ->
                     }
                 }
             },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
-        ) { Text(if (bestRunning) "Ищу лучший сервер…" else "⚡ Подключиться к лучшему серверу") }
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp)
+        )
 
         val sp = speedText
         if (sp != null) {
-            SectionCard(title = "Тест скорости " + (if (connected) "(через VPN)" else "(напрямую)")) {
-                Text(sp, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("Загрузка с speed.cloudflare.com, до 10 сек", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Section("Тест скорости " + (if (connected) "· через VPN" else "· напрямую")) {
+                Text(sp, color = c.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 4.dp))
+                Text("speed.cloudflare.com, до 10 сек", color = c.hint, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
             }
         }
-        Spacer(Modifier.height(24.dp))
+
+        if (server != null) {
+            Section("Подключение") {
+                KV("Адрес", "${server.address}:${server.port}")
+                KV("Транспорт", server.network + (if (server.path.isNotEmpty()) " ${server.path}" else ""))
+                KVIf("SNI", server.sni)
+                KV("Защита", server.securityLabel())
+                val exit = ip.vpn
+                if (connected && ip.wasConnected && exit != null) {
+                    KV("Выходной IP", "${Fmt.flag(exit.countryCode)} ${exit.ip}")
+                }
+                KV("SOCKS5 / HTTP", "127.0.0.1:${XrayConfig.SOCKS_PORT} / ${XrayConfig.HTTP_PORT}")
+                if (vpn.switches > 0) KV("Переключений", "${vpn.switches}")
+                KV("Ядро", CoreManager.version())
+            }
+        }
+        Spacer(Modifier.height(BottomInset))
+    }
+}
+
+@Composable
+private fun ConnectOrb(color: Color, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.size(150.dp).clip(CircleShape).background(
+            Brush.radialGradient(listOf(color.copy(alpha = 0.28f), Color.Transparent))
+        ),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            Modifier
+                .size(118.dp)
+                .clip(CircleShape)
+                .background(Brush.radialGradient(listOf(color.copy(alpha = 0.95f), color.copy(alpha = 0.55f))))
+                .background(
+                    Brush.linearGradient(
+                        0f to Color.White.copy(alpha = 0.45f),
+                        0.45f to Color.Transparent,
+                        1f to Color.White.copy(alpha = 0.15f)
+                    )
+                )
+                .border(
+                    1.5.dp,
+                    Brush.linearGradient(listOf(Color.White.copy(alpha = 0.95f), Color.White.copy(alpha = 0.08f), Color.White.copy(alpha = 0.55f))),
+                    CircleShape
+                )
+                .clickable(enabled = enabled, onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("⏻", fontSize = 44.sp, color = Color.White)
+        }
+    }
+}
+
+@Composable
+private fun ServerPill(server: Server?, onClick: () -> Unit) {
+    val c = ray
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(c.field)
+            .clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (server == null) {
+            Text("Добавьте сервер", color = c.accent, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+        } else {
+            FlagBox(server.flagEmoji(), 36.dp)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(server.cleanName(), color = c.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${server.protocolLabel()} · ${server.network} · ${server.securityLabel()}", color = c.hint, fontSize = 12.sp, maxLines = 1)
+            }
+            DelayBadge(server.delay)
+        }
+        Text("  ›", color = c.hint, fontSize = 18.sp)
+    }
+}
+
+@Composable
+private fun RowScope.Stat(label: String, value: String, color: Color = Color.Unspecified) {
+    val c = ray
+    Column(Modifier.weight(1f).padding(vertical = 7.dp)) {
+        Text(label, color = c.hint, fontSize = 11.sp, maxLines = 1)
+        Text(
+            value, color = if (color == Color.Unspecified) c.text else color,
+            fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1
+        )
     }
 }
 
 @Composable
 fun SpeedGraph(history: List<Pair<Long, Long>>) {
+    val c = ray
     val downColor = Good
     val upColor = Blue
-    val gridColor = Color.White.copy(alpha = 0.06f)
-    Canvas(Modifier.fillMaxWidth().height(90.dp)) {
+    val gridColor = c.divider
+    Canvas(Modifier.fillMaxWidth().height(70.dp)) {
         drawLine(gridColor, start = Offset(0f, size.height / 2), end = Offset(size.width, size.height / 2))
+        drawLine(gridColor, start = Offset(0f, size.height - 1f), end = Offset(size.width, size.height - 1f))
         if (history.size < 2) return@Canvas
         val max = history.maxOf { maxOf(it.first, it.second) }.coerceAtLeast(1L).toFloat()
         val stepX = size.width / (history.size - 1)
@@ -259,7 +297,7 @@ fun SpeedGraph(history: List<Pair<Long, Long>>) {
             val p = Path()
             history.forEachIndexed { i, v ->
                 val x = i * stepX
-                val y = size.height - (sel(v) / max) * size.height
+                val y = size.height - (sel(v) / max) * size.height * 0.92f
                 if (i == 0) p.moveTo(x, y) else p.lineTo(x, y)
             }
             return p

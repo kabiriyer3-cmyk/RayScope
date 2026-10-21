@@ -1,5 +1,3 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-
 package com.rayscope.app.ui
 
 import android.content.Intent
@@ -10,13 +8,20 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -33,15 +38,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@Composable
-private fun BackIcon(onBack: () -> Unit) {
-    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад") }
-}
-
 // ---------------- Subscriptions ----------------
 
 @Composable
 fun SubsScreen(onBack: () -> Unit) {
+    val c = ray
     val subs by Repo.subs.collectAsState()
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
@@ -49,53 +50,40 @@ fun SubsScreen(onBack: () -> Unit) {
     var addOpen by remember { mutableStateOf(false) }
     var toDelete by remember { mutableStateOf<Subscription?>(null) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Подписки") },
-                navigationIcon = { BackIcon(onBack) },
-                actions = {
-                    IconButton(onClick = { addOpen = true }) { Icon(Icons.Filled.Add, contentDescription = "Добавить") }
-                }
-            )
+    Column(Modifier.fillMaxSize()) {
+        Header("Подписки", subtitle = "${subs.size}", onBack = onBack) {
+            GlassIconButton(onClick = { addOpen = true }) {
+                Icon(Icons.Filled.Add, contentDescription = "Добавить", tint = c.accent, modifier = Modifier.size(20.dp))
+            }
         }
-    ) { pad ->
-        LazyColumn(Modifier.fillMaxSize().padding(pad)) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 40.dp)) {
             if (subs.isEmpty()) {
                 item {
-                    Text(
-                        "Подписок нет. Нажмите + чтобы добавить URL.",
-                        Modifier.padding(24.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Text("Подписок нет. Нажмите +, чтобы добавить URL.", color = c.hint, fontSize = 14.sp, modifier = Modifier.padding(24.dp))
                 }
             }
             items(subs, key = { it.id }) { sub ->
                 SubInfoCard(sub)
                 Text(
-                    sub.url,
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    sub.url, color = c.hint, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 26.dp, vertical = 2.dp)
                 )
-                Row(Modifier.padding(horizontal = 16.dp)) {
-                    TextButton(onClick = { scope.launch { Actions.updateSub(sub) } }) { Text("Обновить") }
-                    TextButton(onClick = {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    GlassChip("Обновить", false) { scope.launch { Actions.updateSub(sub) } }
+                    GlassChip("URL", false) {
                         clipboard.setText(AnnotatedString(sub.url))
                         toast("URL скопирован")
-                    }) { Text("URL") }
+                    }
                     if (sub.supportUrl.isNotEmpty()) {
-                        TextButton(onClick = {
+                        GlassChip("Поддержка", false) {
                             try {
                                 ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(sub.supportUrl)))
                             } catch (e: Exception) {
                                 toast("Не удалось открыть")
                             }
-                        }) { Text("Поддержка") }
+                        }
                     }
-                    TextButton(onClick = { toDelete = sub }) { Text("Удалить", color = Bad) }
+                    GlassChip("Удалить", false) { toDelete = sub }
                 }
             }
         }
@@ -120,7 +108,7 @@ fun SubsScreen(onBack: () -> Unit) {
                 TextButton(onClick = {
                     Repo.removeSub(d.id)
                     toDelete = null
-                }) { Text("Удалить") }
+                }) { Text("Удалить", color = Bad) }
             },
             dismissButton = { TextButton(onClick = { toDelete = null }) { Text("Отмена") } }
         )
@@ -133,6 +121,7 @@ private data class AppItem(val label: String, val pkg: String, val system: Boole
 
 @Composable
 fun AppsScreen(onBack: () -> Unit) {
+    val c = ray
     val ctx = LocalContext.current
     var apps by remember { mutableStateOf<List<AppItem>?>(null) }
     var selected by remember { mutableStateOf(Repo.settings.perAppSet) }
@@ -161,45 +150,42 @@ fun AppsScreen(onBack: () -> Unit) {
             .sortedByDescending { it.pkg in selected }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Приложения (${selected.size})") },
-                navigationIcon = { BackIcon(onBack) },
-                actions = {
-                    TextButton(onClick = {
-                        selected = emptySet()
-                        Repo.settings.perAppSet = emptySet()
-                    }) { Text("Сбросить") }
-                }
-            )
-        }
-    ) { pad ->
-        Column(Modifier.fillMaxSize().padding(pad)) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = { Text("Поиск приложения") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
-            )
-            Box(Modifier.padding(horizontal = 12.dp)) {
-                SwitchRow("Показывать системные", null, showSystem) { showSystem = it }
+    Column(Modifier.fillMaxSize()) {
+        Header("Приложения", subtitle = "Выбрано ${selected.size}", onBack = onBack) {
+            GlassChip("Сброс", false) {
+                selected = emptySet()
+                Repo.settings.perAppSet = emptySet()
             }
-            if (all == null) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            } else {
-                LazyColumn(Modifier.fillMaxSize()) {
-                    items(shown, key = { it.pkg }) { a ->
-                        Row(
-                            Modifier.fillMaxWidth().clickable { toggle(a.pkg) }.padding(horizontal = 12.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(checked = a.pkg in selected, onCheckedChange = { toggle(a.pkg) })
-                            Column(Modifier.weight(1f)) {
-                                Text(a.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(a.pkg, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
+        }
+        GlassField(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = "Поиск приложения",
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+        )
+        Box(Modifier.padding(horizontal = 16.dp)) {
+            SwitchRow("Показывать системные", null, showSystem) { showSystem = it }
+        }
+        if (all == null) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = c.accent) }
+        } else {
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 40.dp)) {
+                items(shown, key = { it.pkg }) { a ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp)
+                            .glass(c, RoundedCornerShape(16.dp))
+                            .clickable { toggle(a.pkg) }
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = a.pkg in selected,
+                            onCheckedChange = { toggle(a.pkg) },
+                            colors = CheckboxDefaults.colors(checkedColor = c.accent, uncheckedColor = c.hint, checkmarkColor = Color.White)
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(a.label, color = c.text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(a.pkg, color = c.hint, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -212,34 +198,33 @@ fun AppsScreen(onBack: () -> Unit) {
 
 @Composable
 fun LogsScreen(onBack: () -> Unit) {
+    val c = ray
     val lines by AppLog.lines.collectAsState()
     val clipboard = LocalClipboardManager.current
     val listState = rememberLazyListState()
     LaunchedEffect(lines.size) {
         if (lines.isNotEmpty()) listState.scrollToItem(lines.size - 1)
     }
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Журнал") },
-                navigationIcon = { BackIcon(onBack) },
-                actions = {
-                    TextButton(onClick = {
-                        clipboard.setText(AnnotatedString(lines.joinToString("\n")))
-                        toast("Журнал скопирован")
-                    }) { Text("Копировать") }
-                    TextButton(onClick = { AppLog.clear() }) { Text("Очистить") }
-                }
-            )
+    Column(Modifier.fillMaxSize()) {
+        Header("Журнал", subtitle = "${lines.size} записей", onBack = onBack) {
+            GlassChip("Копировать", false) {
+                clipboard.setText(AnnotatedString(lines.joinToString("\n")))
+                toast("Журнал скопирован")
+            }
+            GlassChip("Очистить", false) { AppLog.clear() }
         }
-    ) { pad ->
-        LazyColumn(Modifier.fillMaxSize().padding(pad).padding(horizontal = 10.dp), state = listState) {
+        LazyColumn(
+            Modifier.fillMaxSize().padding(horizontal = 12.dp).navigationBarsPadding()
+                .glass(c, RoundedCornerShape(20.dp)),
+            state = listState,
+            contentPadding = PaddingValues(12.dp)
+        ) {
             items(lines) { l ->
                 Text(
                     l,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
-                    color = if (l.contains("Ошибка") || l.contains("error", ignoreCase = true)) Bad else MaterialTheme.colorScheme.onSurface,
+                    color = if (l.contains("Ошибка") || l.contains("error", ignoreCase = true)) Bad else c.text,
                     modifier = Modifier.padding(vertical = 1.dp)
                 )
             }

@@ -1,19 +1,23 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-
 package com.rayscope.app.ui
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.*
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.rayscope.app.core.ConnState
 import com.rayscope.app.core.VpnState
 import com.rayscope.app.data.Repo
@@ -29,11 +33,11 @@ private fun verdict(r: IpCheckResult): Verdict {
     val real = r.real
     val vpn = r.vpn
     return when {
-        r.running -> Verdict("⏳", "Проверка…", "", Idle)
-        r.checkedAt == 0L -> Verdict("ℹ", "Ещё не проверялось", "Нажмите «Проверить»", Idle)
+        r.running -> Verdict("…", "Проверка…", "", Idle)
+        r.checkedAt == 0L -> Verdict("i", "Ещё не проверялось", "Нажмите «Проверить»", Blue)
         !r.wasConnected -> Verdict(
             "○", "VPN не подключён",
-            if (real != null) "Ваш IP: ${Fmt.flag(real.countryCode)} ${real.ip} ${real.country}" else (r.realErr ?: ""),
+            if (real != null) "Ваш IP: ${Fmt.flag(real.countryCode)} ${real.ip}" else (r.realErr ?: ""),
             Idle
         )
         vpn == null -> Verdict("✕", "VPN-сервер не отвечает", r.vpnErr ?: "Нет ответа через туннель", Bad)
@@ -48,6 +52,7 @@ private fun verdict(r: IpCheckResult): Verdict {
 
 @Composable
 fun IpCheckScreen() {
+    val c = ray
     val stateVal by IpCheckModel.state.collectAsState()
     val vpnStatus by VpnState.status.collectAsState()
     val scope = rememberCoroutineScope()
@@ -56,130 +61,129 @@ fun IpCheckScreen() {
     val v = verdict(res)
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        TopAppBar(
-            title = { Text("Проверка IP") },
-            actions = {
-                IconButton(enabled = !res.running, onClick = { scope.launch { IpCheckModel.run() } }) {
-                    Icon(Icons.Filled.Refresh, contentDescription = "Проверить")
-                }
-            }
-        )
-
-        Card(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-            colors = CardDefaults.cardColors(containerColor = v.color.copy(alpha = 0.14f)),
-            border = BorderStroke(1.dp, v.color)
-        ) {
-            Column(Modifier.padding(16.dp)) {
-                Text(v.icon + "  " + v.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = v.color)
-                if (v.sub.isNotEmpty()) Text(v.sub, style = MaterialTheme.typography.bodyMedium)
-                if (res.checkedAt > 0) {
-                    Text(
-                        "Проверено: ${Fmt.date(res.checkedAt)}" + (if (res.serverName.isNotEmpty()) " · ${res.serverName}" else ""),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+        Header("Проверка IP", subtitle = if (connected) "VPN подключён" else "VPN не подключён") {
+            GlassIconButton(onClick = { scope.launch { IpCheckModel.run() } }, enabled = !res.running) {
+                Icon(Icons.Filled.Refresh, contentDescription = "Проверить", tint = c.accent, modifier = Modifier.size(19.dp))
             }
         }
 
-        Button(
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp)
+                .glass(c, RoundedCornerShape(24.dp), tint = v.color).padding(16.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(42.dp).clip(CircleShape).background(v.color.copy(alpha = 0.25f)),
+                    contentAlignment = Alignment.Center
+                ) { Text(v.icon, color = v.color, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(v.title, color = c.text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    if (v.sub.isNotEmpty()) Text(v.sub, color = c.hint, fontSize = 13.sp)
+                }
+            }
+            if (res.checkedAt > 0) {
+                Text(
+                    "Проверено ${Fmt.date(res.checkedAt)}" + (if (res.serverName.isNotEmpty()) " · ${res.serverName}" else ""),
+                    color = c.hint, fontSize = 11.sp, modifier = Modifier.padding(top = 10.dp)
+                )
+            }
+        }
+
+        GlassButton(
+            when {
+                res.running -> "Проверяю…"
+                connected -> "Сравнить реальный IP и IP через VPN"
+                else -> "Проверить мой IP"
+            },
+            primary = true,
             enabled = !res.running,
             onClick = { scope.launch { IpCheckModel.run() } },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
-        ) {
-            Text(
-                when {
-                    res.running -> "Проверяю…"
-                    connected -> "Проверить: реальный IP vs IP через VPN"
-                    else -> "Проверить мой IP"
-                }
-            )
-        }
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp)
+        )
         if (!connected) {
             Text(
-                "Подключитесь к VPN, чтобы сравнить IP до и после и убедиться, что сервер работает.",
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                "Подключитесь к VPN, чтобы сравнить IP до и после.",
+                color = c.hint, fontSize = 12.sp,
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 2.dp)
             )
         }
 
         if (res.checkedAt > 0) {
-            IpCard("🏠 Реальный IP (без VPN)", res.real, res.realErr)
-            if (res.wasConnected) IpCard("🛡 IP через VPN", res.vpn, res.vpnErr)
+            IpCard("Реальный IP · без VPN", res.real, res.realErr)
+            if (res.wasConnected) IpCard("IP через VPN", res.vpn, res.vpnErr)
 
             if (res.wasConnected) {
                 val entry = res.entryIp
                 val exitIp = res.vpn?.ip
-                SectionCard("🧭 Маршрут") {
-                    KV("Вход (адрес сервера)", entry ?: "—")
+                Section("Маршрут") {
+                    KV("Вход (сервер)", entry ?: "—")
                     KV("Выход (видят сайты)", exitIp ?: "—")
                     if (entry != null && exitIp != null) {
                         Text(
                             if (entry == exitIp) "Выход совпадает с адресом сервера"
-                            else "Выход отличается от входа: каскад / CDN / отдельный exit-узел",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            else "Выход отличается от входа: каскад, CDN или отдельный exit-узел",
+                            color = c.hint, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp)
                         )
                     }
                 }
             }
 
-            SectionCard("🔎 DNS") {
-                KV("Резолвер (напрямую)", res.dnsReal ?: "не определён")
-                if (res.wasConnected) KV("Резолвер (через VPN)", res.dnsVpn ?: "не определён")
+            Section("DNS") {
+                KV("Резолвер напрямую", res.dnsReal ?: "не определён")
+                if (res.wasConnected) KV("Резолвер через VPN", res.dnsVpn ?: "не определён")
                 KV("DNS в туннеле", Repo.settings.dnsList().joinToString(", "))
             }
 
-            SectionCard("IPv6") {
+            Section("IPv6") {
                 val v6 = res.ipv6Direct
                 KV("IPv6 в сети", v6 ?: "нет")
                 if (v6 != null && res.wasConnected && !Repo.settings.ipv6) {
                     Text(
-                        "⚠ В вашей сети есть IPv6, а маршрутизация IPv6 в VPN выключена. Часть трафика приложений может идти мимо туннеля. Включите «Маршрутизировать IPv6» в настройках.",
-                        color = Mid,
-                        style = MaterialTheme.typography.bodySmall
+                        "⚠ В сети есть IPv6, а маршрутизация IPv6 выключена: часть трафика может идти мимо VPN. Включите её в настройках.",
+                        color = Mid, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp)
                     )
                 } else if (res.wasConnected) {
-                    Text("✓ Утечки IPv6 не обнаружено", color = Good, style = MaterialTheme.typography.bodySmall)
+                    Text("✓ Утечки IPv6 не обнаружено", color = Good, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
                 }
             }
         }
 
-        SectionCard("🌍 Доступность сервисов") {
-            Text(
-                "Проверка популярных сайтов напрямую и через VPN",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(6.dp))
-            OutlinedButton(enabled = !res.sitesRunning, onClick = { scope.launch { IpCheckModel.runSites() } }) {
-                Text(if (res.sitesRunning) "Проверяю…" else "Проверить сервисы")
-            }
-            if (res.sites.isNotEmpty()) {
-                Spacer(Modifier.height(6.dp))
-                Row(Modifier.fillMaxWidth()) {
-                    Text("Сервис", Modifier.weight(0.4f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Напрямую", Modifier.weight(0.3f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Через VPN", Modifier.weight(0.3f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Section("Доступность сервисов") {
+            if (res.sites.isEmpty()) {
+                Text(
+                    "YouTube, Instagram, Telegram, ChatGPT… напрямую и через VPN",
+                    color = c.hint, fontSize = 12.sp, modifier = Modifier.padding(vertical = 6.dp)
+                )
+            } else {
+                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Text("Сервис", color = c.hint, fontSize = 11.sp, modifier = Modifier.weight(0.4f))
+                    Text("Напрямую", color = c.hint, fontSize = 11.sp, modifier = Modifier.weight(0.3f))
+                    Text("Через VPN", color = c.hint, fontSize = 11.sp, modifier = Modifier.weight(0.3f))
                 }
                 res.sites.forEach { s ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                        Text(s.name, Modifier.weight(0.4f), style = MaterialTheme.typography.bodySmall)
+                    RowDivider()
+                    Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
+                        Text(s.name, color = c.text, fontSize = 14.sp, modifier = Modifier.weight(0.4f))
                         SiteCell(s.direct)
                         SiteCell(s.vpn)
                     }
                 }
             }
+            GlassButton(
+                if (res.sitesRunning) "Проверяю…" else "Проверить сервисы",
+                enabled = !res.sitesRunning,
+                onClick = { scope.launch { IpCheckModel.runSites() } },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
+            )
         }
 
         if (res.history.isNotEmpty()) {
-            SectionCard("🕘 История проверок") {
-                res.history.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+            Section("История проверок") {
+                res.history.forEach { Text(it, color = c.text, fontSize = 12.sp, modifier = Modifier.padding(vertical = 3.dp)) }
             }
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(BottomInset))
     }
 }
 
@@ -187,37 +191,46 @@ fun IpCheckScreen() {
 private fun RowScope.SiteCell(v: Long) {
     val txt = when {
         v == -2L -> "—"
-        v < 0 -> "✕ недоступен"
+        v < 0 -> "✕ нет"
         else -> "✓ $v ms"
     }
-    val c = when {
+    val col = when {
         v == -2L -> Idle
         v < 0 -> Bad
         else -> Good
     }
-    Text(txt, Modifier.weight(0.3f), color = c, style = MaterialTheme.typography.bodySmall)
+    Text(txt, color = col, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(0.3f))
 }
 
 @Composable
 private fun IpCard(title: String, info: IpInfo?, err: String?) {
-    SectionCard(title) {
+    val c = ray
+    Section(title) {
         if (info == null) {
             Text(
-                err ?: "Нет данных",
-                color = if (err != null) Bad else MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall
+                err ?: "Нет данных", color = if (err != null) Bad else c.hint, fontSize = 13.sp,
+                modifier = Modifier.padding(vertical = 6.dp)
             )
         } else {
-            Text("${Fmt.flag(info.countryCode)}  ${info.ip}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(4.dp))
-            KV("Страна", listOf(info.country, info.countryCode).filter { it.isNotEmpty() }.distinct().joinToString(" / "))
-            KV("Регион / город", listOf(info.region, info.city).filter { it.isNotEmpty() }.joinToString(", "))
-            KV("Провайдер (ISP)", info.isp)
+            Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                FlagBox(Fmt.flag(info.countryCode), 42.dp)
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text(info.ip, color = c.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        listOf(info.country, info.city).filter { it.isNotEmpty() }.joinToString(", ").ifEmpty { "—" },
+                        color = c.hint, fontSize = 13.sp
+                    )
+                }
+            }
+            RowDivider()
+            KV("Провайдер", info.isp)
             KV("Организация", info.org)
             KV("ASN", info.asn)
+            KV("Регион", info.region)
             KV("Часовой пояс", info.timezone)
             val hosting = info.hosting
-            if (hosting != null) KV("Тип IP", if (hosting) "Хостинг / дата-центр" else "Домашний / мобильный")
+            if (hosting != null) KV("Тип IP", if (hosting) "Дата-центр" else "Домашний / мобильный")
             if (info.proxy == true) KV("Метка", "Известен как прокси / VPN", Mid)
             KV("Ответ API", "${info.latencyMs} ms · ${info.source}")
         }

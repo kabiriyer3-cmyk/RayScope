@@ -8,37 +8,46 @@ import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.rayscope.app.App
 import com.rayscope.app.core.ConnState
@@ -55,10 +64,15 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         if (savedInstanceState == null) handleIntent(intent)
         setContent {
-            RayTheme {
-                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    AppRoot()
+            val mode by Repo.themeMode.collectAsState()
+            RayTheme(mode) {
+                val dark = ray.dark
+                LaunchedEffect(dark) {
+                    val t = android.graphics.Color.TRANSPARENT
+                    val style = if (dark) SystemBarStyle.dark(t) else SystemBarStyle.light(t, t)
+                    enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
                 }
+                AppRoot()
             }
         }
     }
@@ -125,35 +139,13 @@ fun AppRoot() {
 
     BackHandler(enabled = route != Route.Tabs) { route = Route.Tabs }
 
-    when (val r = route) {
-        is Route.Detail -> ServerDetailScreen(r.id, onBack = { route = Route.Tabs }, onConnect = connect)
-        Route.Apps -> AppsScreen(onBack = { route = Route.Tabs })
-        Route.Logs -> LogsScreen(onBack = { route = Route.Tabs })
-        Route.Subs -> SubsScreen(onBack = { route = Route.Tabs })
-        Route.Tabs -> Scaffold(
-            contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            bottomBar = {
-                NavigationBar {
-                    NavigationBarItem(
-                        selected = tab == 0, onClick = { tab = 0 },
-                        icon = { Icon(Icons.Filled.Home, contentDescription = null) }, label = { Text("Главная") }
-                    )
-                    NavigationBarItem(
-                        selected = tab == 1, onClick = { tab = 1 },
-                        icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = null) }, label = { Text("Серверы") }
-                    )
-                    NavigationBarItem(
-                        selected = tab == 2, onClick = { tab = 2 },
-                        icon = { Icon(Icons.Filled.LocationOn, contentDescription = null) }, label = { Text("IP") }
-                    )
-                    NavigationBarItem(
-                        selected = tab == 3, onClick = { tab = 3 },
-                        icon = { Icon(Icons.Filled.Settings, contentDescription = null) }, label = { Text("Настройки") }
-                    )
-                }
-            }
-        ) { pad ->
-            Box(Modifier.fillMaxSize().padding(pad)) {
+    RayBackground {
+        when (val r = route) {
+            is Route.Detail -> ServerDetailScreen(r.id, onBack = { route = Route.Tabs }, onConnect = connect)
+            Route.Apps -> AppsScreen(onBack = { route = Route.Tabs })
+            Route.Logs -> LogsScreen(onBack = { route = Route.Tabs })
+            Route.Subs -> SubsScreen(onBack = { route = Route.Tabs })
+            Route.Tabs -> {
                 when (tab) {
                     0 -> DashboardScreen(onToggle = toggle, onGoServers = { tab = 1 }, onGoIp = { tab = 2 })
                     1 -> ServersScreen(onOpen = { route = Route.Detail(it) }, onToggle = toggle)
@@ -164,6 +156,43 @@ fun AppRoot() {
                         onSubs = { route = Route.Subs }
                     )
                 }
+                GlassTabBar(tab = tab, onTab = { tab = it }, modifier = Modifier.align(Alignment.BottomCenter))
+            }
+        }
+    }
+}
+
+private data class TabItem(val icon: ImageVector, val label: String)
+
+@Composable
+private fun GlassTabBar(tab: Int, onTab: (Int) -> Unit, modifier: Modifier = Modifier) {
+    val c = ray
+    val items = listOf(
+        TabItem(Icons.Filled.Home, "Главная"),
+        TabItem(Icons.AutoMirrored.Filled.List, "Серверы"),
+        TabItem(Icons.Filled.LocationOn, "IP"),
+        TabItem(Icons.Filled.Settings, "Настройки"),
+    )
+    Row(
+        modifier
+            .navigationBarsPadding()
+            .padding(bottom = 10.dp)
+            .glass(c, RoundedCornerShape(30.dp))
+            .padding(5.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        items.forEachIndexed { i, item ->
+            val sel = tab == i
+            Column(
+                Modifier
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(if (sel) c.accent.copy(alpha = if (c.dark) 0.24f else 0.14f) else Color.Transparent)
+                    .clickable { onTab(i) }
+                    .padding(horizontal = 15.dp, vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(item.icon, contentDescription = item.label, tint = if (sel) c.accent else c.hint, modifier = Modifier.size(21.dp))
+                Text(item.label, fontSize = 10.sp, color = if (sel) c.accent else c.hint, fontWeight = FontWeight.Medium, maxLines = 1)
             }
         }
     }

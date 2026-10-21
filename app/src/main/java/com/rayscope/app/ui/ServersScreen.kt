@@ -1,12 +1,13 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-
 package com.rayscope.app.ui
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
@@ -20,6 +21,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -40,7 +43,7 @@ import com.rayscope.app.util.toast
 import kotlinx.coroutines.launch
 
 enum class SFilter(val title: String) {
-    ALL("Все"), WORKING("Рабочие"), DEAD("Нерабочие"), UNTESTED("Не проверены"), FAV("★ Избранные")
+    ALL("Все"), WORKING("Рабочие"), DEAD("Нерабочие"), UNTESTED("Не проверены"), FAV("★")
 }
 
 enum class SSort(val title: String) {
@@ -73,11 +76,12 @@ private fun filterSort(all: List<Server>, f: SFilter, sort: SSort, q: String): L
 
 @Composable
 private fun MItem(text: String, onClick: () -> Unit) {
-    DropdownMenuItem(text = { Text(text) }, onClick = onClick)
+    DropdownMenuItem(text = { Text(text, fontSize = 14.sp) }, onClick = onClick)
 }
 
 @Composable
 fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
+    val c = ray
     val servers by Repo.servers.collectAsState()
     val subs by Repo.subs.collectAsState()
     val selectedId by Repo.selectedId.collectAsState()
@@ -107,122 +111,111 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            TopAppBar(
-                title = { Text("Серверы") },
-                actions = {
-                    IconButton(onClick = { showSearch = !showSearch }) {
-                        Icon(Icons.Filled.Search, contentDescription = "Поиск")
-                    }
-                    IconButton(onClick = { scope.launch { Actions.testAll() } }, enabled = !testing) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "Проверить все")
-                    }
-                    Box {
-                        TextButton(onClick = { sortOpen = true }) { Text("⇅", fontSize = 18.sp) }
-                        DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
-                            SSort.entries.forEach { s ->
-                                MItem((if (s == sort) "✓ " else "    ") + s.title) {
-                                    sort = s
-                                    sortOpen = false
-                                }
-                            }
-                        }
-                    }
-                    Box {
-                        IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "Меню")
-                        }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            MItem("📋 Импорт из буфера") {
-                                menuOpen = false
-                                pasteAction()
-                            }
-                            MItem("➕ Добавить подписку") {
-                                menuOpen = false
-                                addSubOpen = true
-                            }
-                            MItem("🔄 Обновить подписки") {
-                                menuOpen = false
-                                scope.launch { Actions.updateAllSubs(false) }
-                            }
-                            MItem("📡 TCP-пинг всех") {
-                                menuOpen = false
-                                scope.launch { Actions.tcpAll() }
-                            }
-                            MItem("⚡ Лучший сервер") {
-                                menuOpen = false
-                                scope.launch {
-                                    val b = Actions.pickBest()
-                                    if (b == null) {
-                                        toast("Нет рабочих серверов")
-                                    } else {
-                                        Repo.select(b.id)
-                                        toast("Лучший: ${b.cleanName()} (${b.delay} ms)")
-                                        if (VpnState.isConnected) RayVpnService.switchServer()
-                                    }
-                                }
-                            }
-                            MItem("🗑 Удалить нерабочие") {
-                                menuOpen = false
-                                confirmDead = true
-                            }
-                            MItem("♻ Сбросить результаты тестов") {
-                                menuOpen = false
-                                Repo.resetTests()
-                            }
-                            MItem("📤 Скопировать все ссылки") {
-                                menuOpen = false
-                                clipboard.setText(AnnotatedString(Actions.exportAll()))
-                                toast("Ссылки скопированы")
+            Header("Серверы", subtitle = "${servers.size} всего · ${counts[SFilter.WORKING] ?: 0} рабочих") {
+                GlassIconButton(onClick = { showSearch = !showSearch }) {
+                    Icon(Icons.Filled.Search, contentDescription = "Поиск", tint = c.text, modifier = Modifier.size(19.dp))
+                }
+                GlassIconButton(onClick = { scope.launch { Actions.testAll() } }, enabled = !testing) {
+                    Icon(Icons.Filled.Refresh, contentDescription = "Проверить все", tint = c.accent, modifier = Modifier.size(19.dp))
+                }
+                Box {
+                    GlassIconButton(onClick = { sortOpen = true }) { Text("⇅", color = c.text, fontSize = 16.sp) }
+                    DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
+                        SSort.entries.forEach { s ->
+                            MItem((if (s == sort) "✓ " else "    ") + s.title) {
+                                sort = s
+                                sortOpen = false
                             }
                         }
                     }
                 }
-            )
-
-            if (testing) {
-                LinearProgressIndicator(
-                    progress = { if (prog.second == 0) 0f else prog.first.toFloat() / prog.second },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Text(
-                    "Проверка ${prog.first} / ${prog.second}…",
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
-                )
+                Box {
+                    GlassIconButton(onClick = { menuOpen = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Меню", tint = c.text, modifier = Modifier.size(19.dp))
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        MItem("📋  Импорт из буфера") {
+                            menuOpen = false
+                            pasteAction()
+                        }
+                        MItem("➕  Добавить подписку") {
+                            menuOpen = false
+                            addSubOpen = true
+                        }
+                        MItem("🔄  Обновить подписки") {
+                            menuOpen = false
+                            scope.launch { Actions.updateAllSubs(false) }
+                        }
+                        MItem("📡  TCP-пинг всех") {
+                            menuOpen = false
+                            scope.launch { Actions.tcpAll() }
+                        }
+                        MItem("⚡  Лучший сервер") {
+                            menuOpen = false
+                            scope.launch {
+                                val b = Actions.pickBest()
+                                if (b == null) {
+                                    toast("Нет рабочих серверов")
+                                } else {
+                                    Repo.select(b.id)
+                                    toast("Лучший: ${b.cleanName()} (${b.delay} ms)")
+                                    if (VpnState.isConnected) RayVpnService.switchServer()
+                                }
+                            }
+                        }
+                        MItem("🗑  Удалить нерабочие") {
+                            menuOpen = false
+                            confirmDead = true
+                        }
+                        MItem("♻  Сбросить результаты") {
+                            menuOpen = false
+                            Repo.resetTests()
+                        }
+                        MItem("📤  Скопировать все ссылки") {
+                            menuOpen = false
+                            clipboard.setText(AnnotatedString(Actions.exportAll()))
+                            toast("Ссылки скопированы")
+                        }
+                    }
+                }
             }
 
             if (showSearch) {
-                OutlinedTextField(
+                GlassField(
                     value = query,
                     onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                    singleLine = true,
-                    placeholder = { Text("Имя, адрес, протокол…") },
-                    trailingIcon = {
-                        if (query.isNotEmpty()) {
-                            IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, contentDescription = null) }
-                        }
-                    }
+                    placeholder = "Имя, адрес, протокол…",
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
                 )
             }
 
             LazyRow(
-                contentPadding = PaddingValues(horizontal = 12.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 items(SFilter.entries.toList()) { f ->
-                    FilterChip(
-                        selected = filter == f,
-                        onClick = { filter = f },
-                        label = { Text("${f.title} · ${counts[f] ?: 0}") }
-                    )
+                    GlassChip("${f.title} ${counts[f] ?: 0}", selected = filter == f) { filter = f }
                 }
+            }
+
+            if (testing) {
+                LinearProgressIndicator(
+                    progress = { if (prog.second == 0) 0f else prog.first.toFloat() / prog.second },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    color = c.accent,
+                    trackColor = c.field
+                )
+                Text(
+                    "Проверка ${prog.first} / ${prog.second}…",
+                    color = c.hint, fontSize = 12.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
             }
 
             if (servers.isEmpty()) {
                 EmptyServers(onPaste = pasteAction, onAddSub = { addSubOpen = true })
             } else {
-                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 4.dp, bottom = 96.dp)) {
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 2.dp, bottom = 170.dp)) {
                     if (filter == SFilter.ALL && query.isBlank()) {
                         items(subs, key = { "sub_" + it.id }) { sub -> SubInfoCard(sub) }
                     }
@@ -230,8 +223,8 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
                         item {
                             Text(
                                 "Нет серверов под этот фильтр",
-                                Modifier.padding(24.dp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = c.hint, fontSize = 14.sp,
+                                modifier = Modifier.padding(24.dp)
                             )
                         }
                     }
@@ -253,21 +246,34 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
             }
         }
 
-        ExtendedFloatingActionButton(
-            onClick = { if (!busy) onToggle() },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-            containerColor = if (connected) Bad else MaterialTheme.colorScheme.primary,
-            contentColor = if (connected) Color.White else MaterialTheme.colorScheme.onPrimary,
+        val fabColor = if (connected) Bad else c.accent
+        val fabShape = RoundedCornerShape(50)
+        Row(
+            Modifier
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(end = 16.dp, bottom = 88.dp)
+                .clip(fabShape)
+                .background(Brush.verticalGradient(listOf(fabColor.copy(alpha = 0.85f), fabColor)))
+                .background(Brush.linearGradient(0f to Color.White.copy(alpha = 0.25f), 0.5f to Color.Transparent))
+                .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.6f), Color.White.copy(alpha = 0.05f))), fabShape)
+                .clickable(enabled = !busy, onClick = onToggle)
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(if (connected) Icons.Filled.Close else Icons.Filled.PlayArrow, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
+            Icon(
+                if (connected) Icons.Filled.Close else Icons.Filled.PlayArrow,
+                contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(6.dp))
             Text(
                 when (vpn.state) {
                     ConnState.CONNECTED -> "Отключить"
                     ConnState.CONNECTING -> "Подключение…"
                     ConnState.STOPPING -> "Отключение…"
                     ConnState.STOPPED -> "Подключить"
-                }
+                },
+                color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
             )
         }
     }
@@ -292,7 +298,7 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
                     confirmDead = false
                     val k = Actions.removeDead()
                     toast("Удалено: $k")
-                }) { Text("Удалить") }
+                }) { Text("Удалить", color = Bad) }
             },
             dismissButton = { TextButton(onClick = { confirmDead = false }) { Text("Отмена") } }
         )
@@ -309,127 +315,108 @@ fun ServerRow(
     onFav: () -> Unit,
     onTest: () -> Unit,
 ) {
-    val borderColor = when {
-        active -> Good
-        selected -> MaterialTheme.colorScheme.primary
-        else -> Color.Transparent
-    }
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-        border = BorderStroke(1.5.dp, borderColor),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+    val c = ray
+    val shape = RoundedCornerShape(18.dp)
+    var m: Modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp).glass(c, shape)
+    if (active) m = m.border(1.5.dp, Good, shape) else if (selected) m = m.border(1.5.dp, c.accent, shape)
+    Row(
+        m.clickable(onClick = onClick).padding(start = 8.dp, end = 2.dp, top = 7.dp, bottom = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            Modifier.padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(s.flagEmoji().ifEmpty { "🌐" }, fontSize = 26.sp)
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(s.cleanName(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "${s.protocolLabel()} · ${s.network} · ${s.securityLabel()}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                val extra = buildList<String> {
-                    if (s.tcpPing >= 0) add("TCP ${s.tcpPing} ms")
-                    val st = s.stability()
-                    if (st >= 0) add("стабильность $st%")
-                    if (s.lastTested > 0) add(Fmt.ago(s.lastTested))
-                }
-                if (extra.isNotEmpty()) {
-                    Text(
-                        extra.joinToString(" · "),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                    )
-                }
-                if (s.isDead && s.lastError.isNotEmpty()) {
-                    Text(
-                        s.lastError,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Bad,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+        FlagBox(s.flagEmoji(), 40.dp)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(s.cleanName(), color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val extra = buildList<String> {
+                add(s.protocolLabel())
+                add(s.network)
+                add(s.securityLabel())
+                if (s.tcpPing >= 0) add("TCP ${s.tcpPing}")
+                val st = s.stability()
+                if (st >= 0) add("$st%")
             }
-            Column(horizontalAlignment = Alignment.End) {
-                DelayBadge(s.delay, onClick = onTest)
-                Row {
-                    IconButton(onClick = onFav, modifier = Modifier.size(34.dp)) {
-                        Icon(
-                            Icons.Filled.Star,
-                            contentDescription = "Избранное",
-                            tint = if (s.favorite) Mid else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
-                        )
-                    }
-                    IconButton(onClick = onInfo, modifier = Modifier.size(34.dp)) {
-                        Icon(Icons.Filled.Info, contentDescription = "Подробнее", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
+            Text(extra.joinToString(" · "), color = c.hint, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (s.isDead && s.lastError.isNotEmpty()) {
+                Text(s.lastError, color = Bad, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+        }
+        DelayBadge(s.delay, onClick = onTest)
+        IconButton(onClick = onFav, modifier = Modifier.size(32.dp)) {
+            Icon(
+                Icons.Filled.Star, contentDescription = "Избранное",
+                tint = if (s.favorite) Mid else c.hint.copy(alpha = 0.35f), modifier = Modifier.size(18.dp)
+            )
+        }
+        IconButton(onClick = onInfo, modifier = Modifier.size(32.dp)) {
+            Icon(Icons.Filled.Info, contentDescription = "Подробнее", tint = c.hint, modifier = Modifier.size(18.dp))
         }
     }
 }
 
 @Composable
 fun SubInfoCard(sub: Subscription) {
+    val c = ray
     val now = System.currentTimeMillis()
-    SectionCard(title = "📦 " + sub.name.ifEmpty { "Подписка" } + "  ·  ${sub.serverCount} серв.") {
-        val used = sub.upload + sub.download
+    val used = sub.upload + sub.download
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp)
+            .glass(c, RoundedCornerShape(18.dp)).padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("📦", fontSize = 15.sp)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                sub.name.ifEmpty { "Подписка" }, color = c.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
+            )
+            Text("${sub.serverCount} серв. · ${Fmt.ago(sub.lastUpdated)}", color = c.hint, fontSize = 11.sp)
+        }
         if (sub.total > 0) {
             LinearProgressIndicator(
                 progress = { (used.toFloat() / sub.total.toFloat()).coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp).height(5.dp).clip(RoundedCornerShape(50)),
+                color = c.accent,
+                trackColor = c.field
             )
-            Spacer(Modifier.height(4.dp))
             Text(
-                "Трафик: ${Fmt.bytes(used)} из ${Fmt.bytes(sub.total)} (осталось ${Fmt.bytes((sub.total - used).coerceAtLeast(0))})",
-                style = MaterialTheme.typography.bodySmall
+                "${Fmt.bytes(used)} из ${Fmt.bytes(sub.total)} · осталось ${Fmt.bytes((sub.total - used).coerceAtLeast(0))}",
+                color = c.hint, fontSize = 12.sp
             )
         } else if (used > 0) {
-            Text("Трафик: ${Fmt.bytes(used)} · без лимита", style = MaterialTheme.typography.bodySmall)
+            Text("Трафик: ${Fmt.bytes(used)} · без лимита", color = c.hint, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
         }
         if (sub.expire > 0) {
             val days = (sub.expire * 1000 - now) / 86_400_000L
             Text(
-                if (days >= 0) "Действует до ${Fmt.date(sub.expire * 1000)} · осталось $days дн."
-                else "Истекла ${Fmt.date(sub.expire * 1000)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (days < 3) Bad else MaterialTheme.colorScheme.onSurfaceVariant
+                if (days >= 0) "До ${Fmt.date(sub.expire * 1000)} · осталось $days дн." else "Истекла ${Fmt.date(sub.expire * 1000)}",
+                color = if (days < 3) Bad else c.hint, fontSize = 12.sp
             )
         }
-        if (sub.announce.isNotBlank()) Text("📢 ${sub.announce}", style = MaterialTheme.typography.bodySmall)
-        Text(
-            "Обновлено: ${Fmt.ago(sub.lastUpdated)}",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        if (sub.announce.isNotBlank()) {
+            Text("📢 ${sub.announce}", color = c.text, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+        }
     }
 }
 
 @Composable
 private fun EmptyServers(onPaste: () -> Unit, onAddSub: () -> Unit) {
+    val c = ray
     Column(
-        Modifier.fillMaxSize().padding(32.dp),
+        Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("🛰", fontSize = 56.sp)
+        Text("🛰", fontSize = 52.sp)
         Spacer(Modifier.height(8.dp))
-        Text("Серверов пока нет", style = MaterialTheme.typography.titleMedium)
+        Text("Серверов пока нет", color = c.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
         Text(
-            "Добавьте подписку или вставьте ссылки vless:// vmess:// trojan:// ss:// hy2://",
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall
+            "Добавьте подписку или вставьте ссылки vless / vmess / trojan / ss / hy2",
+            color = c.hint, fontSize = 13.sp, textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(16.dp))
-        Button(onClick = onAddSub) { Text("Добавить подписку") }
+        GlassButton("Добавить подписку", onClick = onAddSub, primary = true, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = onPaste) { Text("Вставить из буфера") }
+        GlassButton("Вставить из буфера", onClick = onPaste, modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(100.dp))
     }
 }

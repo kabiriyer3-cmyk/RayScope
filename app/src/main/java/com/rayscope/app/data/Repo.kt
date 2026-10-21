@@ -17,6 +17,7 @@ object Repo {
     val servers = MutableStateFlow<List<Server>>(emptyList())
     val subs = MutableStateFlow<List<Subscription>>(emptyList())
     val selectedId = MutableStateFlow<String?>(null)
+    val themeMode = MutableStateFlow(0)
 
     fun init(ctx: Context) {
         dir = ctx.filesDir
@@ -24,6 +25,12 @@ object Repo {
         servers.value = dedupeIds(loadList(File(dir, "servers.json")) { Server.fromJson(it) })
         subs.value = loadList(File(dir, "subs.json")) { Subscription.fromJson(it) }
         selectedId.value = settings.selectedId.ifEmpty { null }
+        themeMode.value = settings.themeMode
+    }
+
+    fun setTheme(mode: Int) {
+        themeMode.value = mode
+        settings.themeMode = mode
     }
 
     private fun dedupeIds(list: List<Server>): List<Server> {

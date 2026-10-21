@@ -1,7 +1,5 @@
 <resources>
-    <style name="Theme.RayScope" parent="android:Theme.Material.NoActionBar">
+    <style name="Theme.RayScope" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/bg</item>
-        <item name="android:statusBarColor">@color/bg</item>
-        <item name="android:navigationBarColor">@color/bg</item>
     </style>
 </resources>
