@@ -1,10 +1,36 @@
 # RayScope
 
-Android VPN-клиент на **Xray-core** в стиле Happ / INCY: те же подписки и ссылки, но с упором на **диагностику**: видно, работает ли сервер, меняется ли IP, куда идёт трафик и насколько стабильно соединение.
+VPN-клиент на **Xray-core** для **Android и Windows** в стиле Happ / INCY: те же подписки и ссылки, но с упором на **диагностику**: видно, работает ли сервер, меняется ли IP, куда идёт трафик и насколько стабильно соединение.
 
 ## Скачать
 
-Готовые APK собираются GitHub Actions и лежат в **[Releases](../../releases/latest)**. Для большинства телефонов нужен `arm64-v8a`.
+Всё собирается GitHub Actions и лежит в **[Releases](../../releases/latest)**:
+
+- **Android**: APK, для большинства телефонов нужен `arm64-v8a`;
+- **Windows**: `RayScope-…-windows-x64.zip`.
+
+## Версия для Windows
+
+Портативная сборка, устанавливать ничего не нужно: Java и ядро Xray уже внутри архива.
+
+1. Скачайте `RayScope-…-windows-x64.zip` из релиза и распакуйте в любую папку (например, `C:/RayScope`).
+2. Запустите **`RayScope.cmd`**.
+3. Скопируйте ссылку на подписку или серверы и нажмите «Вставить» на вкладке «Серверы».
+
+Что умеет:
+
+- **Два режима**: системный прокси Windows (браузеры и большинство программ идут через RayScope сами) или только локальный прокси `127.0.0.1:10809` (HTTP) и `127.0.0.1:10808` (SOCKS5) для ручной настройки. Для Telegram и игр удобнее SOCKS5.
+- Тот же дизайн «Скоп»: циферблат с радарной развёрткой, скорость ↓↑, live-пинг со спарклайном, график за минуту, тёмная и светлая темы, 8 акцентов, компактный список.
+- Подписки (трафик, срок, автообновление, пресеты User-Agent), импорт из буфера, избранное, поиск, фильтры и сортировка.
+- Реальный пинг всех серверов через ядро, «Лучший сервер» одной кнопкой, удаление нерабочих.
+- Проверка IP (настоящий и через VPN) и доступность YouTube, Instagram, Telegram, ChatGPT, Discord, X.
+- Настройки как на Android: Mux, порты, доступ из LAN, таймаут и пороги пинга, DNS-пресеты, российские сайты напрямую, блокировка рекламы и QUIC, свои правила, TLS-фрагментация, uTLS-отпечаток.
+- **Трей**: крестик прячет окно, из трея можно подключиться, отключиться и выйти. При выходе (и даже после падения) системный прокси возвращается как был, чтобы интернет не пропал.
+- **Режим разработчика**: Настройки → 7 раз нажать на «Версия». Появятся журнал ядра, TCP-пинг, полные параметры и JSON сервера, ASN и источник в проверке IP, история проверок, domain strategy, sniffing, уровень логов и ручная фрагментация.
+
+Настройки и серверы хранятся в `%APPDATA%/RayScope`, папку можно открыть из настроек. Обновиться = распаковать новую версию поверх, данные останутся.
+
+Ограничения: это прокси, а не TUN, поэтому программы, которые игнорируют системный прокси (часть игр, Discord-голос), нужно настраивать на SOCKS5 вручную. Флаги стран показаны кодами (DE, NL…), потому что Windows не рисует эмодзи-флаги. Windows Defender SmartScreen может спросить подтверждение при первом запуске.
 
 ## Дизайн 3.0 «Скоп»
 
@@ -86,8 +112,9 @@ CI (`.github/workflows/build.yml`) на каждый push в `main` или те�
 
 1. скачивает ядро `libv2ray.aar` из [2dust/AndroidLibXrayLite](https://github.com/2dust/AndroidLibXrayLite);
 2. собирает подписанные APK (arm64-v8a, armeabi-v7a, x86_64, x86, universal);
-3. публикует релиз с APK и `SHA256SUMS.txt`;
-4. если сборка упала, создаёт issue с выдержкой из лога.
+3. собирает версию для Windows (модуль `desktop`, Compose Multiplatform) и упаковывает её вместе с JRE 17 (Temurin) и `xray.exe` из [XTLS/Xray-core](https://github.com/XTLS/Xray-core);
+4. публикует релиз с APK, zip для Windows и `SHA256SUMS.txt`;
+5. если сборка упала, создаёт issue с выдержкой из лога.
 
 ### Свой ключ подписи
 
@@ -100,8 +127,10 @@ base64 -w0 my.p12   # -> KEYSTORE_BASE64
 
 ### Локально
 
-Положите `libv2ray.aar` в `app/libs/` и откройте проект в Android Studio (Gradle 8.11, JDK 17). Без переменных окружения release подписывается debug-ключом.
+Android: положите `libv2ray.aar` в `app/libs/` и откройте проект в Android Studio (Gradle 8.11, JDK 17). Без переменных окружения release подписывается debug-ключом.
+
+Windows: `gradle :desktop:run` (нужен JDK 17), `xray.exe` и geo-файлы положите в папку `core` рядом с рабочей директорией.
 
 ## Лицензии
 
-Ядро: [Xray-core](https://github.com/XTLS/Xray-core) (MPL-2.0) через [AndroidLibXrayLite](https://github.com/2dust/AndroidLibXrayLite). Liquid Glass шейдеры: [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) (Apache-2.0). Иконки по мотивам [Lucide](https://lucide.dev) (ISC).
+Ядро: [Xray-core](https://github.com/XTLS/Xray-core) (MPL-2.0) через [AndroidLibXrayLite](https://github.com/2dust/AndroidLibXrayLite). Liquid Glass шейдеры: [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) (Apache-2.0). Иконки по мотивам [Lucide](https://lucide.dev) (ISC). Windows-сборка включает [Eclipse Temurin](https://adoptium.net) JRE (GPLv2 + Classpath Exception).
