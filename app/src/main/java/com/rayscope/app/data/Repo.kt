@@ -21,9 +21,14 @@ object Repo {
     fun init(ctx: Context) {
         dir = ctx.filesDir
         settings = Settings(ctx)
-        servers.value = loadList(File(dir, "servers.json")) { Server.fromJson(it) }
+        servers.value = dedupeIds(loadList(File(dir, "servers.json")) { Server.fromJson(it) })
         subs.value = loadList(File(dir, "subs.json")) { Subscription.fromJson(it) }
         selectedId.value = settings.selectedId.ifEmpty { null }
+    }
+
+    private fun dedupeIds(list: List<Server>): List<Server> {
+        val used = HashSet<String>()
+        return list.map { if (used.add(it.id)) it else it.copy(id = java.util.UUID.randomUUID().toString()) }
     }
 
     private fun <T> loadList(f: File, parse: (JSONObject) -> T): List<T> = try {
@@ -99,6 +104,8 @@ object Repo {
     fun removeSub(id: String) {
         subs.update { l -> l.filterNot { it.id == id } }
         servers.update { l -> l.filterNot { it.subId == id } }
+        val sel = selectedId.value
+        if (sel != null && servers.value.none { it.id == sel }) select(servers.value.firstOrNull()?.id)
         save()
     }
 
@@ -106,9 +113,10 @@ object Repo {
     fun replaceSubServers(subId: String, fresh: List<Server>) {
         servers.update { list ->
             val old = list.filter { it.subId == subId }.associateBy { it.key() }
+            val used = HashSet<String>()
             val merged = fresh.map { n ->
                 val o = old[n.key()]
-                if (o == null) n else n.copy(
+                if (o == null || !used.add(o.id)) n else n.copy(
                     id = o.id,
                     delay = o.delay,
                     tcpPing = o.tcpPing,
