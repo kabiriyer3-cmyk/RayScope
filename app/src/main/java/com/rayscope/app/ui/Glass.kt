@@ -117,7 +117,8 @@ fun Modifier.liquidGlass(
     val lens = remember { if (Build.VERSION.SDK_INT >= 33) Lens() else null }
     val refractionHeight = if (level >= 2) 16.dp else 10.dp
     val refractionAmount = if (level >= 2) 26.dp else 14.dp
-    val radius = cornerRadius * c.corner.coerceAtLeast(0.6f)
+    // same radius as the shadow shape, so the lens, fill and shadow line up for every corner setting
+    val radius = cornerRadius * c.corner
     val shape = c.shape(cornerRadius)
     return this
         .shadow(
@@ -139,7 +140,7 @@ fun Modifier.liquidGlass(
                     translate(-off.x, -off.y) { drawLayer(bd.layer) }
                 }
                 layer.renderEffect = lens.effect(
-                    size.width, size.height, r,
+                    size.width, size.height, r.coerceAtLeast(1f),
                     refractionHeight.toPx().coerceAtMost(size.minDimension / 2f),
                     refractionAmount.toPx()
                 )
@@ -161,7 +162,7 @@ fun Modifier.liquidGlass(
             val icr = CornerRadius((r - sw / 2f).coerceAtLeast(0f))
             if (refracted && lens != null && Build.VERSION.SDK_INT >= 33) {
                 drawRoundRect(
-                    brush = ShaderBrush(lens.highlight(size.width, size.height, r, c.rim)),
+                    brush = ShaderBrush(lens.highlight(size.width, size.height, r.coerceAtLeast(1f), c.rim)),
                     topLeft = inset, size = inner, cornerRadius = icr, style = Stroke(sw)
                 )
             } else {
