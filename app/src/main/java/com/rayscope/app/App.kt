@@ -8,6 +8,7 @@ import com.rayscope.app.util.AppLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class App : Application() {
@@ -21,8 +22,21 @@ class App : Application() {
             AppLog.add("Ошибка инициализации ядра: ${e.message}")
         }
         AppLog.add("RayScope запущен. ${CoreManager.version()}")
-        if (Repo.settings.autoUpdateSubs && Repo.subs.value.isNotEmpty()) {
-            scope.launch { Actions.updateAllSubs(silent = true) }
+        val st = Repo.settings
+        scope.launch {
+            if (st.autoUpdateSubs && Repo.subs.value.isNotEmpty()) Actions.updateAllSubs(silent = true)
+            if (st.testOnLaunch && Repo.servers.value.isNotEmpty() && !st.testAfterUpdate) Actions.testAll(silent = true)
+        }
+        // periodic re-test while the process is alive
+        scope.launch {
+            while (true) {
+                val m = Repo.settings.autoRetestMinutes
+                delay(if (m <= 0) 60_000L else m * 60_000L)
+                if (Repo.settings.autoRetestMinutes > 0 && Repo.servers.value.isNotEmpty()) {
+                    AppLog.add("Автопроверка серверов")
+                    Actions.testAll(silent = true)
+                }
+            }
         }
     }
 

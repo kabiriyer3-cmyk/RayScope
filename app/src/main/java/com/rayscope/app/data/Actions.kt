@@ -93,7 +93,7 @@ object Actions {
         AppLog.add("Подписка «${r.sub.name}»: ${r.servers.size} серверов")
         if (!silent) toast("${r.sub.name}: ${r.servers.size} серверов")
         if (Repo.settings.testAfterUpdate) {
-            testAll(Repo.servers.value.filter { it.subId == sub.id }.map { it.id })
+            testAll(Repo.servers.value.filter { it.subId == sub.id }.map { it.id }, silent = silent)
         }
         true
     }
@@ -107,8 +107,8 @@ object Actions {
         for (s in list) updateSub(s, silent)
     }
 
-    /** Real URL test through Xray for every (or given) server. Drives the working/dead filter. */
-    suspend fun testAll(onlyIds: Collection<String>? = null) {
+    /** Latency test for every (or given) server, according to the ping settings. Drives the working/dead filter. */
+    suspend fun testAll(onlyIds: Collection<String>? = null, silent: Boolean = false) {
         if (!testing.compareAndSet(false, true)) return
         try {
             val idSet = onlyIds?.toSet()
@@ -117,7 +117,7 @@ object Actions {
             progress.value = 0 to targets.size
             val sem = Semaphore(Repo.settings.concurrency.coerceIn(1, 32))
             val done = AtomicInteger(0)
-            AppLog.add("Проверка ${targets.size} серверов…")
+            AppLog.add("Проверка ${targets.size} серверов (${modeLabel()})…")
             coroutineScope {
                 targets.map { s ->
                     async(Dispatchers.IO) {
@@ -130,16 +130,33 @@ object Actions {
             val ids = targets.map { it.id }.toSet()
             val ok = Repo.servers.value.count { it.id in ids && it.isWorking }
             AppLog.add("Проверка завершена: рабочих $ok из ${targets.size}")
-            toast("Рабочих: $ok из ${targets.size}")
+            if (!silent) toast("Рабочих: $ok из ${targets.size}")
         } finally {
             testing.value = false
         }
     }
 
+    fun modeLabel(): String = when (Repo.settings.pingMode) {
+        1 -> "реальная задержка"
+        2 -> "только TCP"
+        else -> "реальная задержка + TCP"
+    }
+
     suspend fun testOne(id: String, save: Boolean = false) {
         val s = Repo.server(id) ?: return
-        val tcp = if (s.protocol == "hysteria2") Server.DELAY_UNTESTED else Tester.tcpPing(s.address, s.port)
-        val (d, err) = Tester.realDelay(s)
+        val st = Repo.settings
+        val mode = st.pingMode
+        val udp = s.protocol == "hysteria2"
+        val tcp = when {
+            udp -> Server.DELAY_UNTESTED
+            mode == 1 -> s.tcpPing
+            else -> Tester.tcpPing(s.address, s.port, st.pingTimeout)
+        }
+        val (d, err) = if (mode == 2 && !udp) {
+            if (tcp >= 0) tcp to "" else -1L to "TCP: порт не отвечает"
+        } else {
+            Tester.realDelay(s)
+        }
         Repo.update(id) {
             it.copy(
                 delay = d,
@@ -157,6 +174,7 @@ object Actions {
         if (!testing.compareAndSet(false, true)) return
         try {
             val list = Repo.servers.value
+            val timeout = Repo.settings.pingTimeout
             progress.value = 0 to list.size
             val done = AtomicInteger(0)
             val sem = Semaphore(16)
@@ -164,7 +182,7 @@ object Actions {
                 list.map { s ->
                     async(Dispatchers.IO) {
                         sem.withPermit {
-                            val t = if (s.protocol == "hysteria2") Server.DELAY_UNTESTED else Tester.tcpPing(s.address, s.port)
+                            val t = if (s.protocol == "hysteria2") Server.DELAY_UNTESTED else Tester.tcpPing(s.address, s.port, timeout)
                             Repo.update(s.id) { it.copy(tcpPing = t) }
                         }
                         progress.value = done.incrementAndGet() to list.size
@@ -191,10 +209,10 @@ object Actions {
     suspend fun pickBest(): Server? {
         val now = System.currentTimeMillis()
         if (Repo.servers.value.none { it.isWorking }) {
-            testAll()
+            testAll(silent = true)
         } else {
             val stale = Repo.servers.value.filter { it.isWorking && now - it.lastTested > 10 * 60_000L }
-            if (stale.isNotEmpty()) testAll(stale.map { it.id })
+            if (stale.isNotEmpty()) testAll(stale.map { it.id }, silent = true)
         }
         return Repo.servers.value.filter { it.isWorking }.minByOrNull { it.delay }
     }

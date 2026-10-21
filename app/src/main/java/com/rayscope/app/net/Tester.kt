@@ -28,13 +28,22 @@ object Tester {
         "Netflix" to "https://www.netflix.com/",
     )
 
+    /** Preset URLs for the latency test. */
+    val TEST_URLS = listOf(
+        "gstatic" to "https://www.gstatic.com/generate_204",
+        "Cloudflare" to "http://cp.cloudflare.com/",
+        "Google" to "https://www.google.com/generate_204",
+        "Apple" to "http://captive.apple.com/hotspot-detect.html",
+        "Microsoft" to "http://www.msftconnecttest.com/connecttest.txt",
+    )
+
     /** TCP handshake time to host:port (DNS excluded), -1 on failure. */
     suspend fun tcpPing(host: String, port: Int, timeoutMs: Int = 3000): Long = withContext(Dispatchers.IO) {
         try {
             val addr = InetSocketAddress(host, port)
             Socket().use { s ->
                 val t0 = System.nanoTime()
-                s.connect(addr, timeoutMs)
+                s.connect(addr, timeoutMs.coerceIn(300, 30_000))
                 (System.nanoTime() - t0) / 1_000_000
             }
         } catch (e: Exception) {
@@ -42,15 +51,33 @@ object Tester {
         }
     }
 
-    /** Real HTTP delay through the server (full proxy handshake), using a temporary Xray instance. */
+    /**
+     * Real HTTP delay through the server (full proxy handshake), using a temporary Xray instance.
+     * Honors attempts / aggregate / timeout from settings.
+     */
     suspend fun realDelay(s: Server): Pair<Long, String> = withContext(Dispatchers.IO) {
-        try {
-            val cfg = XrayConfig.build(s, Repo.settings, tun = false)
-            val d = Libv2ray.measureOutboundDelay(cfg, Repo.settings.testUrl)
-            if (d >= 0) d to "" else -1L to "timeout"
+        val st = Repo.settings
+        val cfg = try {
+            XrayConfig.build(s, st, tun = false)
         } catch (e: Throwable) {
-            -1L to (e.message ?: e.javaClass.simpleName).take(300)
+            return@withContext -1L to (e.message ?: e.javaClass.simpleName).take(300)
         }
+        val attempts = st.pingAttempts.coerceIn(1, 5)
+        val ok = mutableListOf<Long>()
+        var err = ""
+        for (i in 0 until attempts) {
+            if (!isActive) break
+            try {
+                val d = Libv2ray.measureOutboundDelay(cfg, st.testUrl)
+                if (d >= 0) ok += d else err = "timeout"
+            } catch (e: Throwable) {
+                err = (e.message ?: e.javaClass.simpleName).take(300)
+            }
+        }
+        if (ok.isEmpty()) return@withContext -1L to err.ifEmpty { "timeout" }
+        val v = if (st.pingAggregate == 1) ok.average().toLong() else ok.min()
+        val limit = st.pingTimeout.coerceIn(500, 30_000)
+        if (v > limit) -1L to "медленнее порога $limit ms ($v ms)" else v to ""
     }
 
     suspend fun resolve(host: String): Pair<List<String>, Long> = withContext(Dispatchers.IO) {
