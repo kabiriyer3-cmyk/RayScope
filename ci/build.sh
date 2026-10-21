@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RayScope CI build: Java, Android SDK, Gradle, Xray core, signing, APK.
+# RayScope CI build: Java, Android SDK, Gradle, Xray core, signing, APK, Windows build.
 # Does not depend on setup-android / setup-gradle actions.
 set -euo pipefail
 
@@ -164,3 +164,6 @@ for f in "${apks[@]}"; do
 done
 (cd dist && sha256sum *.apk > SHA256SUMS.txt)
 ls -la dist
+
+# ---------------------------------------------------------------- windows
+bash ci/desktop.sh "$GRADLE"
