@@ -72,5 +72,29 @@
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
+
+        <receiver
+            android:name=".widget.SmallWidget"
+            android:exported="false"
+            android:label="@string/widget_small_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_small_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.WideWidget"
+            android:exported="false"
+            android:label="@string/widget_wide_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_wide_info" />
+        </receiver>
     </application>
 </manifest>

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/w_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/w_bg"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <FrameLayout
+        android:id="@+id/w_btn"
+        android:layout_width="60dp"
+        android:layout_height="60dp">
+
+        <ImageView
+            android:id="@+id/w_btn_bg"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@null"
+            android:src="@drawable/w_circle" />
+
+        <ImageView
+            android:id="@+id/w_btn_icon"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_gravity="center"
+            android:contentDescription="@string/app_name"
+            android:src="@drawable/w_ic_power" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/w_state"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:text="RayScope"
+        android:textColor="#FFF1F3F7"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/w_sub"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:text=""
+        android:textColor="#FF8A93A2"
+        android:textSize="11sp" />
+</LinearLayout>

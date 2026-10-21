@@ -2,13 +2,17 @@ package com.rayscope.app
 
 import android.app.Application
 import com.rayscope.app.core.CoreManager
+import com.rayscope.app.core.VpnState
 import com.rayscope.app.data.Actions
 import com.rayscope.app.data.Repo
 import com.rayscope.app.util.AppLog
+import com.rayscope.app.widget.Widgets
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 class App : Application() {
@@ -39,6 +43,20 @@ class App : Application() {
                     AppLog.add("Автопроверка серверов")
                     Actions.testAll(silent = true)
                 }
+            }
+        }
+        // home screen widgets follow the VPN state
+        scope.launch {
+            combine(VpnState.status, Repo.selectedId, Repo.ui) { s, sel, u ->
+                listOf(s.state, s.serverId, s.serverName, s.livePing, s.error, sel, u.accent)
+            }
+                .distinctUntilChanged()
+                .collect { Widgets.update(this@App) }
+        }
+        scope.launch {
+            while (true) {
+                delay(5000)
+                if (VpnState.isConnected) Widgets.update(this@App)
             }
         }
     }
