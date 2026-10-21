@@ -80,6 +80,7 @@ private fun verdict(r: IpCheckResult): Verdict {
 @Composable
 fun IpCheckScreen() {
     val c = ray
+    val dev = look.dev
     val stateVal by IpCheckModel.state.collectAsState()
     val vpnStatus by VpnState.status.collectAsState()
     val scope = rememberCoroutineScope()
@@ -102,7 +103,7 @@ fun IpCheckScreen() {
     ) {
         Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
             Spacer(Modifier.height(pageTop()))
-            ScreenTitle("Проверка", if (connected) "IP, DNS, утечки и сервисы · VPN включён" else "IP, DNS, утечки и сервисы · VPN выключен")
+            ScreenTitle("Проверка", if (connected) "IP, утечки и сервисы · VPN включён" else "IP, утечки и сервисы · VPN выключен")
 
             // ---- verdict + route
             Column(
@@ -174,26 +175,26 @@ fun IpCheckScreen() {
             }
 
             if (res.checkedAt > 0) {
-                IpCard("Реальный IP · без VPN", res.real, res.realErr, 1)
-                if (res.wasConnected) IpCard("IP через VPN", res.vpn, res.vpnErr, 2)
+                IpCard("Реальный IP · без VPN", res.real, res.realErr, 1, dev)
+                if (res.wasConnected) IpCard("IP через VPN", res.vpn, res.vpnErr, 2, dev)
 
-                if (res.wasConnected) {
+                if (dev && res.wasConnected) {
                     val entry = res.entryIp
                     val exitIp = res.vpn?.ip
                     val footer = if (entry != null && exitIp != null) {
                         if (entry == exitIp) "Выход совпадает с адресом сервера"
                         else "Выход отличается от входа: каскад, CDN или отдельный exit-узел"
                     } else null
-                    Group("Маршрут", modifier = Modifier.appear(3), footer = footer) {
+                    Group("Маршрут", modifier = Modifier.appear(3), footer = footer, trailing = { DevTag() }) {
                         PrefRow(RayIcons.Pin, Indigo, "Вход (сервер)", value = entry ?: "—")
                         PrefRow(RayIcons.Globe, Blue, "Выход (видят сайты)", value = exitIp ?: "—", divider = false)
                     }
                 }
 
                 Group("DNS", modifier = Modifier.appear(4)) {
-                    PrefRow(RayIcons.Wifi, Teal, "Напрямую", value = res.dnsReal ?: "не определён")
-                    if (res.wasConnected) PrefRow(RayIcons.Shield, Good, "Через VPN", value = res.dnsVpn ?: "не определён")
-                    PrefRow(RayIcons.Servers, Gray, "DNS в туннеле", value = Repo.settings.dnsList().joinToString(", "), divider = false)
+                    PrefRow(RayIcons.Wifi, Teal, "Напрямую", value = res.dnsReal ?: "не определён", divider = res.wasConnected || dev)
+                    if (res.wasConnected) PrefRow(RayIcons.Shield, Good, "Через VPN", value = res.dnsVpn ?: "не определён", divider = dev)
+                    if (dev) PrefRow(RayIcons.Servers, Gray, "DNS в туннеле", value = Repo.settings.dnsList().joinToString(", "), divider = false)
                 }
 
                 val v6 = res.ipv6Direct
@@ -244,19 +245,6 @@ fun IpCheckScreen() {
                     modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 12.dp)
                 )
             }
-
-            if (res.history.isNotEmpty()) {
-                Group("История проверок", modifier = Modifier.appear(7)) {
-                    Column(Modifier.padding(vertical = 8.dp)) {
-                        res.history.forEach {
-                            Text(
-                                it, color = c.text, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
-                }
-            }
             TabBottomSpacer()
         }
     }
@@ -269,7 +257,7 @@ private fun RouteViz(res: IpCheckResult, kind: Int) {
     val col = kindColor(kind)
     val real = res.real
     val vpn = res.vpn
-    val flowing = kind == 1 || kind == 3
+    val flowing = (kind == 1 || kind == 3) && look.motion
     val inf = rememberInfiniteTransition(label = "route")
     val phase by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(700, easing = LinearEasing)), label = "phase")
     val exitFlag = when {
@@ -311,7 +299,7 @@ private fun RouteNode(modifier: Modifier, icon: ImageVector, flag: String, title
             Modifier.size(40.dp).clip(CircleShape).background(c.raised).border(1.dp, c.stroke, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            if (flag.isNotEmpty()) Text(flag, fontSize = 19.sp)
+            if (flag.isNotEmpty() && look.flags) Text(flag, fontSize = 19.sp)
             else Icon(icon, contentDescription = null, tint = c.hint, modifier = Modifier.size(19.dp))
         }
         Spacer(Modifier.height(6.dp))
@@ -375,7 +363,7 @@ private fun RowScope.SiteCell(v: Long) {
 }
 
 @Composable
-private fun IpCard(title: String, info: IpInfo?, err: String?, index: Int) {
+private fun IpCard(title: String, info: IpInfo?, err: String?, index: Int, dev: Boolean) {
     val c = ray
     val clipboard = LocalClipboardManager.current
     Group(title, modifier = Modifier.appear(index)) {
@@ -408,14 +396,16 @@ private fun IpCard(title: String, info: IpInfo?, err: String?, index: Int) {
             }
             Hairline()
             KV("Провайдер", info.isp)
-            KV("Организация", info.org)
-            KV("ASN", info.asn, mono = true)
+            if (dev) {
+                KV("Организация", info.org)
+                KV("ASN", info.asn, mono = true)
+            }
             KV("Регион", info.region)
-            KV("Часовой пояс", info.timezone)
+            if (dev) KV("Часовой пояс", info.timezone)
             val hosting = info.hosting
             if (hosting != null) KV("Тип IP", if (hosting) "Дата-центр" else "Домашний / мобильный")
             if (info.proxy == true) KV("Метка", "Известен как прокси / VPN", Mid)
-            KV("Ответ API", "${info.latencyMs} ms · ${info.source}")
+            if (dev) KV("Ответ API", "${info.latencyMs} ms · ${info.source}")
         }
     }
 }
