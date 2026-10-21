@@ -1,22 +1,16 @@
 package com.rayscope.app.ui
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -28,10 +22,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -105,9 +96,8 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     var filter by rememberSaveable { mutableStateOf(SFilter.ALL) }
-    var sort by rememberSaveable { mutableStateOf(SSort.DEFAULT) }
+    var sort by rememberSaveable { mutableStateOf(SSort.entries.getOrElse(Repo.settings.sortMode) { SSort.DEFAULT }) }
     var query by rememberSaveable { mutableStateOf("") }
-    var showSearch by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var sortOpen by remember { mutableStateOf(false) }
     var addSubOpen by remember { mutableStateOf(false) }
@@ -132,7 +122,6 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
         title = "Серверы",
         scrolled = scrolled,
         actions = {
-            ActionIcon(RayIcons.Search, "Поиск", tint = if (showSearch) c.accent else c.text) { showSearch = !showSearch }
             ActionIcon(
                 RayIcons.Refresh, "Проверить все", tint = c.accent, enabled = !testing,
                 iconModifier = Modifier.graphicsLayer { rotationZ = spin?.value ?: 0f }
@@ -148,6 +137,7 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
                             },
                             onClick = {
                                 sort = s
+                                Repo.settings.sortMode = s.ordinal
                                 sortOpen = false
                             }
                         )
@@ -165,7 +155,7 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
                         menuOpen = false
                         addSubOpen = true
                     }
-                    MItem(RayIcons.Refresh, "Обновить подписки") {
+                    MItem(RayIcons.Download, "Обновить подписки") {
                         menuOpen = false
                         scope.launch { Actions.updateAllSubs(false) }
                     }
@@ -206,17 +196,18 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
             val fabColor = if (connected) Bad else c.accent
             GlassSurface(
                 26.dp,
-                Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 16.dp, bottom = 86.dp).height(52.dp),
-                tint = fabColor.copy(alpha = 0.82f),
+                Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 16.dp, bottom = 88.dp).height(52.dp),
+                tint = fabColor.copy(alpha = 0.86f),
                 enabled = !busy,
                 onClick = onToggle
             ) {
+                val fg = if (connected) Color.White else c.onAccent
                 Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         if (connected) RayIcons.Close else RayIcons.Power,
-                        contentDescription = null, tint = Color.White, modifier = Modifier.size(19.dp)
+                        contentDescription = null, tint = fg, modifier = Modifier.size(19.dp)
                     )
-                    Spacer(Modifier.width(7.dp))
+                    Spacer(Modifier.width(8.dp))
                     Text(
                         when (vpn.state) {
                             ConnState.CONNECTED -> "Отключить"
@@ -224,7 +215,7 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
                             ConnState.STOPPING -> "Отключение…"
                             ConnState.STOPPED -> "Подключить"
                         },
-                        color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold
+                        color = fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold
                     )
                 }
             }
@@ -232,65 +223,82 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
     ) {
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(top = top, bottom = bottom)) {
             item(key = "title") {
-                LargeTitle("Серверы", "${servers.size} всего · ${counts[SFilter.WORKING] ?: 0} рабочих")
+                ScreenTitle(
+                    "Серверы",
+                    "${servers.size} всего · ${counts[SFilter.WORKING] ?: 0} рабочих · ${sort.title.lowercase()}"
+                )
             }
             item(key = "search") {
-                AnimatedVisibility(
-                    visible = showSearch,
-                    enter = expandVertically(spring(dampingRatio = 0.85f, stiffness = 500f)) + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    InputField(
-                        value = query,
-                        onValueChange = { query = it },
-                        placeholder = "Имя, адрес, протокол…",
-                        onCard = false,
-                        leading = RayIcons.Search,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                    )
-                }
+                InputField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = "Имя, адрес, протокол…",
+                    onCard = false,
+                    leading = RayIcons.Search,
+                    trailing = if (query.isNotEmpty()) {
+                        {
+                            Icon(
+                                RayIcons.Close, contentDescription = "Очистить", tint = c.hint,
+                                modifier = Modifier.size(18.dp).clip(CircleShape).clickable { query = "" }
+                            )
+                        }
+                    } else null,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
             }
             item(key = "filters") {
                 LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(SFilter.entries.toList()) { f ->
-                        Chip("${f.title} ${counts[f] ?: 0}", selected = filter == f) { filter = f }
+                        Chip(f.title, selected = filter == f, count = counts[f] ?: 0) { filter = f }
                     }
                 }
             }
             if (testing) {
                 item(key = "progress") {
-                    Column(Modifier.animateItem().padding(horizontal = 20.dp, vertical = 6.dp)) {
+                    Column(Modifier.animateItem().padding(horizontal = 22.dp, vertical = 6.dp)) {
                         SlimProgress(if (prog.second == 0) 0f else prog.first.toFloat() / prog.second)
-                        Text("Проверка ${prog.first} из ${prog.second}…", color = c.hint, fontSize = 12.sp, modifier = Modifier.padding(top = 5.dp))
+                        Text(
+                            "Проверка ${prog.first} из ${prog.second} · ${Actions.modeLabel()}",
+                            color = c.hint, fontSize = 12.sp, style = TNum, modifier = Modifier.padding(top = 6.dp)
+                        )
                     }
                 }
             }
             if (servers.isEmpty()) {
                 item(key = "empty") { EmptyServers(onPaste = pasteAction, onAddSub = { addSubOpen = true }) }
             } else {
-                if (filter == SFilter.ALL && query.isBlank()) {
-                    items(subs, key = { "sub_" + it.id }) { sub -> SubInfoCard(sub, Modifier.animateItem()) }
+                if (filter == SFilter.ALL && query.isBlank() && subs.isNotEmpty()) {
+                    item(key = "subs") {
+                        if (subs.size == 1) {
+                            SubInfoCard(subs.first(), Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                        } else {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                items(subs, key = { it.id }) { sub -> SubInfoCard(sub, Modifier.width(290.dp)) }
+                            }
+                        }
+                    }
                     item(key = "gap") { Spacer(Modifier.height(6.dp)) }
                 }
                 if (shown.isEmpty()) {
                     item(key = "nothing") {
                         Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(RayIcons.Search, contentDescription = null, tint = c.hint, modifier = Modifier.size(32.dp))
-                            Spacer(Modifier.height(8.dp))
+                            IconTile(RayIcons.Filter, c.hint, 52.dp, 26.dp)
+                            Spacer(Modifier.height(10.dp))
                             Text("Нет серверов под этот фильтр", color = c.hint, fontSize = 15.sp)
                         }
                     }
                 }
-                itemsIndexed(shown, key = { _, s -> s.id }) { i, s ->
-                    ServerRow(
+                items(shown, key = { it.id }) { s ->
+                    ServerCard(
                         s = s,
                         selected = s.id == selectedId,
                         active = connected && vpn.serverId == s.id,
-                        first = i == 0,
-                        last = i == shown.lastIndex,
                         modifier = Modifier.animateItem(),
                         onClick = {
                             Repo.select(s.id)
@@ -318,9 +326,10 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
         val n = servers.count { it.isDead }
         AlertDialog(
             onDismissRequest = { confirmDead = false },
-            icon = { IconBadge(RayIcons.Trash, Bad, 44.dp, 24.dp) },
-            title = { Text("Удалить нерабочие?") },
-            text = { Text("Будет удалено серверов: $n. Серверы из подписок вернутся при следующем обновлении.") },
+            containerColor = c.surface,
+            icon = { IconTile(RayIcons.Trash, Bad, 46.dp, 24.dp) },
+            title = { Text("Удалить нерабочие?", color = c.text) },
+            text = { Text("Будет удалено серверов: $n. Серверы из подписок вернутся при следующем обновлении.", color = c.hint) },
             confirmButton = {
                 TextButton(onClick = {
                     confirmDead = false
@@ -328,19 +337,17 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
                     toast("Удалено: $k")
                 }) { Text("Удалить", color = Bad) }
             },
-            dismissButton = { TextButton(onClick = { confirmDead = false }) { Text("Отмена") } }
+            dismissButton = { TextButton(onClick = { confirmDead = false }) { Text("Отмена", color = c.hint) } }
         )
     }
 }
 
-/** Grouped Telegram-style row: rounded only at the ends of the list, hairline dividers in between. */
+/** One server = one card: flag, name, tags, latency readout with signal bars. */
 @Composable
-fun ServerRow(
+fun ServerCard(
     s: Server,
     selected: Boolean,
     active: Boolean,
-    first: Boolean,
-    last: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onInfo: () -> Unit,
@@ -348,14 +355,11 @@ fun ServerRow(
     onTest: () -> Unit,
 ) {
     val c = ray
-    val r = 14.dp
-    val shape = when {
-        first && last -> RoundedCornerShape(r)
-        first -> RoundedCornerShape(topStart = r, topEnd = r)
-        last -> RoundedCornerShape(bottomStart = r, bottomEnd = r)
-        else -> RectangleShape
+    val borderColor = when {
+        active -> Good
+        selected -> c.accent
+        else -> c.stroke
     }
-    val dividerColor = c.divider
     val pop = remember { Animatable(1f) }
     val prevFav = remember { BooleanArray(1) { s.favorite } }
     LaunchedEffect(s.favorite) {
@@ -368,52 +372,60 @@ fun ServerRow(
     Row(
         modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clip(shape)
-            .background(c.card)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .card(c, 18.dp, borderColor, if (active || selected) 1.5.dp else 1.dp)
             .clickable(onClick = onClick)
-            .drawBehind {
-                if (!last) {
-                    val y = size.height - 0.25.dp.toPx()
-                    drawLine(dividerColor, Offset(64.dp.toPx(), y), Offset(size.width, y), 0.5.dp.toPx())
-                }
-            }
-            .padding(start = 12.dp, end = 4.dp, top = 9.dp, bottom = 9.dp),
+            .padding(start = 12.dp, end = 4.dp, top = 11.dp, bottom = 11.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box {
-            FlagBox(s.flagEmoji(), 40.dp)
+            FlagBox(s.flagEmoji(), 42.dp)
             if (selected || active) {
                 Box(
-                    Modifier.align(Alignment.BottomEnd).offset(x = 4.dp, y = 4.dp).size(18.dp)
-                        .clip(CircleShape).background(c.card).padding(2.dp)
-                        .clip(CircleShape).background(if (active) Good else c.accent),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(RayIcons.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(10.dp))
-                }
+                    Modifier.align(Alignment.BottomEnd).offset(x = 4.dp, y = 4.dp).size(16.dp)
+                        .clip(CircleShape).background(c.surface).padding(2.5.dp)
+                        .clip(CircleShape).background(if (active) Good else c.accent)
+                )
             }
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                s.cleanName(), color = if (active) Good else c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                s.cleanName(), color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis
             )
-            val extra = buildList<String> {
-                add(s.protocolLabel())
-                add(s.network)
-                add(s.securityLabel())
-                if (s.tcpPing >= 0) add("TCP ${s.tcpPing}")
-                val st = s.stability()
-                if (st >= 0) add("$st%")
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Tag(s.protocolLabel().uppercase(), if (active) Good else c.accent)
+                Spacer(Modifier.width(6.dp))
+                val extra = buildList {
+                    add(s.network)
+                    add(s.securityLabel())
+                    if (s.tcpPing >= 0) add("tcp ${s.tcpPing}")
+                    val st = s.stability()
+                    if (st >= 0) add("$st%")
+                }
+                Text(
+                    extra.joinToString(" · "), color = c.hint, fontSize = 12.sp, style = TNum,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
             }
-            Text(extra.joinToString(" · "), color = c.hint, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (s.isDead && s.lastError.isNotEmpty()) {
-                Text(s.lastError, color = Bad, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    s.lastError, color = Bad, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 3.dp)
+                )
             }
         }
-        DelayBadge(s.delay, onClick = onTest)
+        Column(
+            Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp)).bounceClick(onClick = onTest)
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalAlignment = Alignment.End
+        ) {
+            LatencyText(s.delay)
+            Spacer(Modifier.height(4.dp))
+            SignalBars(s.delay)
+        }
         Box(
             Modifier.size(34.dp).clip(CircleShape).clickable(onClick = onFav),
             contentAlignment = Alignment.Center
@@ -442,25 +454,27 @@ fun SubInfoCard(sub: Subscription, modifier: Modifier = Modifier) {
     val c = ray
     val now = System.currentTimeMillis()
     val used = sub.upload + sub.download
-    Column(
-        modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).card(c).padding(horizontal = 14.dp, vertical = 12.dp)
-    ) {
+    Column(modifier.fillMaxWidth().card(c, 18.dp).padding(horizontal = 14.dp, vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconBadge(RayIcons.Package, Indigo, 32.dp, 18.dp)
+            IconTile(RayIcons.Package, Indigo, 32.dp, 17.dp)
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     sub.name.ifEmpty { "Подписка" }, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                     maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
-                Text("${sub.serverCount} серверов · обновлена ${Fmt.ago(sub.lastUpdated)}", color = c.hint, fontSize = 12.sp, maxLines = 1)
+                Text(
+                    "${sub.serverCount} серверов · обновлена ${Fmt.ago(sub.lastUpdated)}",
+                    color = c.hint, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
             }
         }
         if (sub.total > 0) {
-            SlimProgress((used.toFloat() / sub.total.toFloat()), Modifier.padding(top = 10.dp, bottom = 5.dp))
+            val frac = used.toFloat() / sub.total.toFloat()
+            SlimProgress(frac, Modifier.padding(top = 10.dp, bottom = 5.dp), color = if (frac > 0.9f) Bad else c.accent)
             Text(
                 "${Fmt.bytes(used)} из ${Fmt.bytes(sub.total)} · осталось ${Fmt.bytes((sub.total - used).coerceAtLeast(0))}",
-                color = c.hint, fontSize = 12.sp
+                color = c.hint, fontSize = 12.sp, style = TNum, maxLines = 1, overflow = TextOverflow.Ellipsis
             )
         } else if (used > 0) {
             Text("Трафик: ${Fmt.bytes(used)} · без лимита", color = c.hint, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
@@ -472,12 +486,12 @@ fun SubInfoCard(sub: Subscription, modifier: Modifier = Modifier) {
                 Spacer(Modifier.width(4.dp))
                 Text(
                     if (days >= 0) "до ${Fmt.date(sub.expire * 1000)} · осталось $days дн." else "истекла ${Fmt.date(sub.expire * 1000)}",
-                    color = if (days < 3) Bad else c.hint, fontSize = 12.sp
+                    color = if (days < 3) Bad else c.hint, fontSize = 12.sp, maxLines = 1
                 )
             }
         }
         if (sub.announce.isNotBlank()) {
-            Text(sub.announce, color = c.text, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+            Text(sub.announce, color = c.text, fontSize = 12.sp, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
         }
     }
 }
@@ -486,18 +500,23 @@ fun SubInfoCard(sub: Subscription, modifier: Modifier = Modifier) {
 private fun EmptyServers(onPaste: () -> Unit, onAddSub: () -> Unit) {
     val c = ray
     Column(
-        Modifier.appear(0).fillMaxWidth().padding(horizontal = 32.dp, vertical = 36.dp),
+        Modifier.appear(0).fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp).card(c, 24.dp).padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        IconBadge(RayIcons.Servers, c.accent, 72.dp, 38.dp)
-        Spacer(Modifier.height(14.dp))
+        Box(
+            Modifier.size(84.dp).clip(CircleShape).border(1.dp, c.stroke, CircleShape).background(c.raised),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(RayIcons.Radar, contentDescription = null, tint = c.accent, modifier = Modifier.size(40.dp))
+        }
+        Spacer(Modifier.height(16.dp))
         Text("Серверов пока нет", color = c.text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
         Text(
             "Добавьте подписку или вставьте ссылки vless / vmess / trojan / ss / hy2",
             color = c.hint, fontSize = 14.sp, textAlign = TextAlign.Center
         )
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(20.dp))
         PillButton("Добавить подписку", onClick = onAddSub, primary = true, icon = RayIcons.Plus, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(8.dp))
         PillButton("Вставить из буфера", onClick = onPaste, icon = RayIcons.Clipboard, modifier = Modifier.fillMaxWidth())
