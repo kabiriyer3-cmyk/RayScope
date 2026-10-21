@@ -4,11 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -60,130 +58,125 @@ fun IpCheckScreen() {
     val connected = vpnStatus.state == ConnState.CONNECTED
     val v = verdict(res)
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        Header("Проверка IP", subtitle = if (connected) "VPN подключён" else "VPN не подключён") {
-            GlassIconButton(onClick = { scope.launch { IpCheckModel.run() } }, enabled = !res.running) {
-                Icon(Icons.Filled.Refresh, contentDescription = "Проверить", tint = c.accent, modifier = Modifier.size(19.dp))
-            }
+    Page(actions = {
+        ActionIcon(Icons.Filled.Refresh, "Проверить", tint = c.accent, enabled = !res.running) {
+            scope.launch { IpCheckModel.run() }
         }
+    }) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            Spacer(Modifier.height(pageTop()))
+            LargeTitle("Проверка IP", if (connected) "VPN подключён" else "VPN не подключён")
 
-        Column(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp)
-                .glass(c, RoundedCornerShape(24.dp), tint = v.color).padding(16.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(42.dp).clip(CircleShape).background(v.color.copy(alpha = 0.25f)),
-                    contentAlignment = Alignment.Center
-                ) { Text(v.icon, color = v.color, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(v.title, color = c.text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    if (v.sub.isNotEmpty()) Text(v.sub, color = c.hint, fontSize = 13.sp)
-                }
-            }
-            if (res.checkedAt > 0) {
-                Text(
-                    "Проверено ${Fmt.date(res.checkedAt)}" + (if (res.serverName.isNotEmpty()) " · ${res.serverName}" else ""),
-                    color = c.hint, fontSize = 11.sp, modifier = Modifier.padding(top = 10.dp)
-                )
-            }
-        }
-
-        GlassButton(
-            when {
-                res.running -> "Проверяю…"
-                connected -> "Сравнить реальный IP и IP через VPN"
-                else -> "Проверить мой IP"
-            },
-            primary = true,
-            enabled = !res.running,
-            onClick = { scope.launch { IpCheckModel.run() } },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp)
-        )
-        if (!connected) {
-            Text(
-                "Подключитесь к VPN, чтобы сравнить IP до и после.",
-                color = c.hint, fontSize = 12.sp,
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 2.dp)
-            )
-        }
-
-        if (res.checkedAt > 0) {
-            IpCard("Реальный IP · без VPN", res.real, res.realErr)
-            if (res.wasConnected) IpCard("IP через VPN", res.vpn, res.vpnErr)
-
-            if (res.wasConnected) {
-                val entry = res.entryIp
-                val exitIp = res.vpn?.ip
-                Section("Маршрут") {
-                    KV("Вход (сервер)", entry ?: "—")
-                    KV("Выход (видят сайты)", exitIp ?: "—")
-                    if (entry != null && exitIp != null) {
-                        Text(
-                            if (entry == exitIp) "Выход совпадает с адресом сервера"
-                            else "Выход отличается от входа: каскад, CDN или отдельный exit-узел",
-                            color = c.hint, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp)
-                        )
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).card(c, 18.dp).padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(44.dp).clip(CircleShape).background(v.color.copy(alpha = 0.16f)),
+                        contentAlignment = Alignment.Center
+                    ) { Text(v.icon, color = v.color, fontSize = 21.sp, fontWeight = FontWeight.Bold) }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(v.title, color = c.text, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        if (v.sub.isNotEmpty()) Text(v.sub, color = c.hint, fontSize = 13.sp)
                     }
                 }
-            }
-
-            Section("DNS") {
-                KV("Резолвер напрямую", res.dnsReal ?: "не определён")
-                if (res.wasConnected) KV("Резолвер через VPN", res.dnsVpn ?: "не определён")
-                KV("DNS в туннеле", Repo.settings.dnsList().joinToString(", "))
-            }
-
-            Section("IPv6") {
-                val v6 = res.ipv6Direct
-                KV("IPv6 в сети", v6 ?: "нет")
-                if (v6 != null && res.wasConnected && !Repo.settings.ipv6) {
+                if (res.checkedAt > 0) {
                     Text(
-                        "⚠ В сети есть IPv6, а маршрутизация IPv6 выключена: часть трафика может идти мимо VPN. Включите её в настройках.",
-                        color = Mid, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp)
+                        "Проверено ${Fmt.date(res.checkedAt)}" + (if (res.serverName.isNotEmpty()) " · ${res.serverName}" else ""),
+                        color = c.hint, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp)
                     )
-                } else if (res.wasConnected) {
-                    Text("✓ Утечки IPv6 не обнаружено", color = Good, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
                 }
             }
-        }
 
-        Section("Доступность сервисов") {
-            if (res.sites.isEmpty()) {
+            PillButton(
+                when {
+                    res.running -> "Проверяю…"
+                    connected -> "Сравнить реальный IP и IP через VPN"
+                    else -> "Проверить мой IP"
+                },
+                primary = true,
+                enabled = !res.running,
+                onClick = { scope.launch { IpCheckModel.run() } },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
+            )
+            if (!connected) {
                 Text(
-                    "YouTube, Instagram, Telegram, ChatGPT… напрямую и через VPN",
-                    color = c.hint, fontSize = 12.sp, modifier = Modifier.padding(vertical = 6.dp)
+                    "Подключитесь к VPN, чтобы сравнить IP до и после.",
+                    color = c.hint, fontSize = 12.sp,
+                    modifier = Modifier.padding(horizontal = 32.dp, vertical = 2.dp)
                 )
-            } else {
-                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Text("Сервис", color = c.hint, fontSize = 11.sp, modifier = Modifier.weight(0.4f))
-                    Text("Напрямую", color = c.hint, fontSize = 11.sp, modifier = Modifier.weight(0.3f))
-                    Text("Через VPN", color = c.hint, fontSize = 11.sp, modifier = Modifier.weight(0.3f))
-                }
-                res.sites.forEach { s ->
-                    RowDivider()
-                    Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
-                        Text(s.name, color = c.text, fontSize = 14.sp, modifier = Modifier.weight(0.4f))
-                        SiteCell(s.direct)
-                        SiteCell(s.vpn)
+            }
+
+            if (res.checkedAt > 0) {
+                IpCard("Реальный IP · без VPN", res.real, res.realErr)
+                if (res.wasConnected) IpCard("IP через VPN", res.vpn, res.vpnErr)
+
+                if (res.wasConnected) {
+                    val entry = res.entryIp
+                    val exitIp = res.vpn?.ip
+                    val footer = if (entry != null && exitIp != null) {
+                        if (entry == exitIp) "Выход совпадает с адресом сервера"
+                        else "Выход отличается от входа: каскад, CDN или отдельный exit-узел"
+                    } else null
+                    Section("Маршрут", footer = footer) {
+                        KV("Вход (сервер)", entry ?: "—")
+                        KV("Выход (видят сайты)", exitIp ?: "—")
                     }
                 }
-            }
-            GlassButton(
-                if (res.sitesRunning) "Проверяю…" else "Проверить сервисы",
-                enabled = !res.sitesRunning,
-                onClick = { scope.launch { IpCheckModel.runSites() } },
-                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
-            )
-        }
 
-        if (res.history.isNotEmpty()) {
-            Section("История проверок") {
-                res.history.forEach { Text(it, color = c.text, fontSize = 12.sp, modifier = Modifier.padding(vertical = 3.dp)) }
+                Section("DNS") {
+                    KV("Резолвер напрямую", res.dnsReal ?: "не определён")
+                    if (res.wasConnected) KV("Резолвер через VPN", res.dnsVpn ?: "не определён")
+                    KV("DNS в туннеле", Repo.settings.dnsList().joinToString(", "))
+                }
+
+                val v6 = res.ipv6Direct
+                val v6Note = when {
+                    v6 != null && res.wasConnected && !Repo.settings.ipv6 ->
+                        "⚠ В сети есть IPv6, а маршрутизация IPv6 выключена: часть трафика может идти мимо VPN. Включите её в настройках."
+                    res.wasConnected -> "✓ Утечки IPv6 не обнаружено"
+                    else -> null
+                }
+                Section("IPv6", footer = v6Note) {
+                    KV("IPv6 в сети", v6 ?: "нет")
+                }
             }
+
+            Section("Доступность сервисов") {
+                if (res.sites.isEmpty()) {
+                    Text(
+                        "YouTube, Instagram, Telegram, ChatGPT… напрямую и через VPN",
+                        color = c.hint, fontSize = 13.sp, modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                } else {
+                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                        Text("Сервис", color = c.hint, fontSize = 12.sp, modifier = Modifier.weight(0.4f))
+                        Text("Напрямую", color = c.hint, fontSize = 12.sp, modifier = Modifier.weight(0.3f))
+                        Text("Через VPN", color = c.hint, fontSize = 12.sp, modifier = Modifier.weight(0.3f))
+                    }
+                    res.sites.forEach { s ->
+                        RowDivider()
+                        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                            Text(s.name, color = c.text, fontSize = 15.sp, modifier = Modifier.weight(0.4f))
+                            SiteCell(s.direct)
+                            SiteCell(s.vpn)
+                        }
+                    }
+                }
+                PillButton(
+                    if (res.sitesRunning) "Проверяю…" else "Проверить сервисы",
+                    enabled = !res.sitesRunning,
+                    onClick = { scope.launch { IpCheckModel.runSites() } },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                )
+            }
+
+            if (res.history.isNotEmpty()) {
+                Section("История проверок") {
+                    res.history.forEach { Text(it, color = c.text, fontSize = 13.sp, modifier = Modifier.padding(vertical = 4.dp)) }
+                }
+            }
+            TabBottomSpacer()
         }
-        Spacer(Modifier.height(BottomInset))
     }
 }
 
@@ -199,7 +192,7 @@ private fun RowScope.SiteCell(v: Long) {
         v < 0 -> Bad
         else -> Good
     }
-    Text(txt, color = col, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(0.3f))
+    Text(txt, color = col, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(0.3f))
 }
 
 @Composable
@@ -208,15 +201,15 @@ private fun IpCard(title: String, info: IpInfo?, err: String?) {
     Section(title) {
         if (info == null) {
             Text(
-                err ?: "Нет данных", color = if (err != null) Bad else c.hint, fontSize = 13.sp,
-                modifier = Modifier.padding(vertical = 6.dp)
+                err ?: "Нет данных", color = if (err != null) Bad else c.hint, fontSize = 14.sp,
+                modifier = Modifier.padding(vertical = 8.dp)
             )
         } else {
-            Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 FlagBox(Fmt.flag(info.countryCode), 42.dp)
                 Spacer(Modifier.width(10.dp))
                 Column {
-                    Text(info.ip, color = c.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text(info.ip, color = c.text, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                     Text(
                         listOf(info.country, info.city).filter { it.isNotEmpty() }.joinToString(", ").ifEmpty { "—" },
                         color = c.hint, fontSize = 13.sp

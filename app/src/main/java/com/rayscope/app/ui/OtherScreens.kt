@@ -8,14 +8,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
@@ -49,33 +47,34 @@ fun SubsScreen(onBack: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     var addOpen by remember { mutableStateOf(false) }
     var toDelete by remember { mutableStateOf<Subscription?>(null) }
+    val top = pageTop()
+    val bottom = navBottom() + 24.dp
 
-    Column(Modifier.fillMaxSize()) {
-        Header("Подписки", subtitle = "${subs.size}", onBack = onBack) {
-            GlassIconButton(onClick = { addOpen = true }) {
-                Icon(Icons.Filled.Add, contentDescription = "Добавить", tint = c.accent, modifier = Modifier.size(20.dp))
-            }
-        }
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 40.dp)) {
+    Page(
+        onBack = onBack,
+        actions = { ActionIcon(Icons.Filled.Add, "Добавить", tint = c.accent) { addOpen = true } }
+    ) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = top, bottom = bottom)) {
+            item(key = "title") { LargeTitle("Подписки", "${subs.size}") }
             if (subs.isEmpty()) {
-                item {
-                    Text("Подписок нет. Нажмите +, чтобы добавить URL.", color = c.hint, fontSize = 14.sp, modifier = Modifier.padding(24.dp))
+                item(key = "empty") {
+                    Text("Подписок нет. Нажмите +, чтобы добавить URL.", color = c.hint, fontSize = 15.sp, modifier = Modifier.padding(24.dp))
                 }
             }
             items(subs, key = { it.id }) { sub ->
                 SubInfoCard(sub)
                 Text(
                     sub.url, color = c.hint, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 26.dp, vertical = 2.dp)
+                    modifier = Modifier.padding(horizontal = 30.dp, vertical = 2.dp)
                 )
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    GlassChip("Обновить", false) { scope.launch { Actions.updateSub(sub) } }
-                    GlassChip("URL", false) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Chip("Обновить", false) { scope.launch { Actions.updateSub(sub) } }
+                    Chip("URL", false) {
                         clipboard.setText(AnnotatedString(sub.url))
                         toast("URL скопирован")
                     }
                     if (sub.supportUrl.isNotEmpty()) {
-                        GlassChip("Поддержка", false) {
+                        Chip("Поддержка", false) {
                             try {
                                 ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(sub.supportUrl)))
                             } catch (e: Exception) {
@@ -83,8 +82,9 @@ fun SubsScreen(onBack: () -> Unit) {
                             }
                         }
                     }
-                    GlassChip("Удалить", false) { toDelete = sub }
+                    Chip("Удалить", false) { toDelete = sub }
                 }
+                Spacer(Modifier.height(8.dp))
             }
         }
     }
@@ -127,6 +127,8 @@ fun AppsScreen(onBack: () -> Unit) {
     var selected by remember { mutableStateOf(Repo.settings.perAppSet) }
     var query by remember { mutableStateOf("") }
     var showSystem by remember { mutableStateOf(false) }
+    val top = pageTop()
+    val bottom = navBottom() + 24.dp
 
     LaunchedEffect(Unit) {
         apps = withContext(Dispatchers.IO) {
@@ -150,30 +152,41 @@ fun AppsScreen(onBack: () -> Unit) {
             .sortedByDescending { it.pkg in selected }
     }
 
-    Column(Modifier.fillMaxSize()) {
-        Header("Приложения", subtitle = "Выбрано ${selected.size}", onBack = onBack) {
-            GlassChip("Сброс", false) {
+    Page(
+        onBack = onBack,
+        actions = {
+            ActionText("Сброс") {
                 selected = emptySet()
                 Repo.settings.perAppSet = emptySet()
             }
         }
-        GlassField(
-            value = query,
-            onValueChange = { query = it },
-            placeholder = "Поиск приложения",
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
-        )
-        Box(Modifier.padding(horizontal = 16.dp)) {
-            SwitchRow("Показывать системные", null, showSystem) { showSystem = it }
-        }
-        if (all == null) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = c.accent) }
-        } else {
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 40.dp)) {
+    ) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = top, bottom = bottom)) {
+            item(key = "title") { LargeTitle("Приложения", "Выбрано ${selected.size}") }
+            item(key = "search") {
+                InputField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = "Поиск приложения",
+                    onCard = false,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
+            item(key = "sys") {
+                Box(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).card(c).padding(horizontal = 16.dp)) {
+                    SwitchRow("Показывать системные", null, showSystem) { showSystem = it }
+                }
+            }
+            if (all == null) {
+                item(key = "loading") {
+                    Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = c.accent)
+                    }
+                }
+            } else {
                 items(shown, key = { it.pkg }) { a ->
                     Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp)
-                            .glass(c, RoundedCornerShape(16.dp))
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).card(c, 12.dp)
                             .clickable { toggle(a.pkg) }
                             .padding(horizontal = 6.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -184,7 +197,7 @@ fun AppsScreen(onBack: () -> Unit) {
                             colors = CheckboxDefaults.colors(checkedColor = c.accent, uncheckedColor = c.hint, checkmarkColor = Color.White)
                         )
                         Column(Modifier.weight(1f)) {
-                            Text(a.label, color = c.text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(a.label, color = c.text, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(a.pkg, color = c.hint, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
@@ -202,30 +215,34 @@ fun LogsScreen(onBack: () -> Unit) {
     val lines by AppLog.lines.collectAsState()
     val clipboard = LocalClipboardManager.current
     val listState = rememberLazyListState()
+    val top = pageTop()
+    val bottom = navBottom() + 24.dp
     LaunchedEffect(lines.size) {
-        if (lines.isNotEmpty()) listState.scrollToItem(lines.size - 1)
+        if (lines.isNotEmpty()) listState.scrollToItem(lines.size)
     }
-    Column(Modifier.fillMaxSize()) {
-        Header("Журнал", subtitle = "${lines.size} записей", onBack = onBack) {
-            GlassChip("Копировать", false) {
+    Page(
+        onBack = onBack,
+        actions = {
+            ActionText("Копировать") {
                 clipboard.setText(AnnotatedString(lines.joinToString("\n")))
                 toast("Журнал скопирован")
             }
-            GlassChip("Очистить", false) { AppLog.clear() }
+            ActionText("Очистить", color = Bad) { AppLog.clear() }
         }
+    ) {
         LazyColumn(
-            Modifier.fillMaxSize().padding(horizontal = 12.dp).navigationBarsPadding()
-                .glass(c, RoundedCornerShape(20.dp)),
+            Modifier.fillMaxSize(),
             state = listState,
-            contentPadding = PaddingValues(12.dp)
+            contentPadding = PaddingValues(top = top, bottom = bottom)
         ) {
+            item(key = "title") { LargeTitle("Журнал", "${lines.size} записей") }
             items(lines) { l ->
                 Text(
                     l,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
                     color = if (l.contains("Ошибка") || l.contains("error", ignoreCase = true)) Bad else c.text,
-                    modifier = Modifier.padding(vertical = 1.dp)
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 1.dp)
                 )
             }
         }

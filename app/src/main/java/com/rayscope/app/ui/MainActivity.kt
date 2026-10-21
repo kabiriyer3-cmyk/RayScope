@@ -19,6 +19,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -139,14 +141,15 @@ fun AppRoot() {
 
     BackHandler(enabled = route != Route.Tabs) { route = Route.Tabs }
 
+    val rootBackdrop = rememberBackdrop()
     RayBackground {
-        when (val r = route) {
-            is Route.Detail -> ServerDetailScreen(r.id, onBack = { route = Route.Tabs }, onConnect = connect)
-            Route.Apps -> AppsScreen(onBack = { route = Route.Tabs })
-            Route.Logs -> LogsScreen(onBack = { route = Route.Tabs })
-            Route.Subs -> SubsScreen(onBack = { route = Route.Tabs })
-            Route.Tabs -> {
-                when (tab) {
+        BackdropSource(rootBackdrop, Modifier.fillMaxSize()) {
+            when (val r = route) {
+                is Route.Detail -> ServerDetailScreen(r.id, onBack = { route = Route.Tabs }, onConnect = connect)
+                Route.Apps -> AppsScreen(onBack = { route = Route.Tabs })
+                Route.Logs -> LogsScreen(onBack = { route = Route.Tabs })
+                Route.Subs -> SubsScreen(onBack = { route = Route.Tabs })
+                Route.Tabs -> when (tab) {
                     0 -> DashboardScreen(onToggle = toggle, onGoServers = { tab = 1 }, onGoIp = { tab = 2 })
                     1 -> ServersScreen(onOpen = { route = Route.Detail(it) }, onToggle = toggle)
                     2 -> IpCheckScreen()
@@ -156,6 +159,10 @@ fun AppRoot() {
                         onSubs = { route = Route.Subs }
                     )
                 }
+            }
+        }
+        if (route == Route.Tabs) {
+            CompositionLocalProvider(LocalBackdrop provides rootBackdrop) {
                 GlassTabBar(tab = tab, onTab = { tab = it }, modifier = Modifier.align(Alignment.BottomCenter))
             }
         }
@@ -173,26 +180,24 @@ private fun GlassTabBar(tab: Int, onTab: (Int) -> Unit, modifier: Modifier = Mod
         TabItem(Icons.Filled.LocationOn, "IP"),
         TabItem(Icons.Filled.Settings, "Настройки"),
     )
-    Row(
-        modifier
-            .navigationBarsPadding()
-            .padding(bottom = 10.dp)
-            .glass(c, RoundedCornerShape(30.dp))
-            .padding(5.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        items.forEachIndexed { i, item ->
-            val sel = tab == i
-            Column(
-                Modifier
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(if (sel) c.accent.copy(alpha = if (c.dark) 0.24f else 0.14f) else Color.Transparent)
-                    .clickable { onTab(i) }
-                    .padding(horizontal = 15.dp, vertical = 6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Icon(item.icon, contentDescription = item.label, tint = if (sel) c.accent else c.hint, modifier = Modifier.size(21.dp))
-                Text(item.label, fontSize = 10.sp, color = if (sel) c.accent else c.hint, fontWeight = FontWeight.Medium, maxLines = 1)
+    GlassSurface(32.dp, modifier.navigationBarsPadding().padding(bottom = 8.dp)) {
+        Row(Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            items.forEachIndexed { i, item ->
+                val sel = tab == i
+                Column(
+                    Modifier
+                        .clip(RoundedCornerShape(28.dp))
+                        .background(if (sel) c.text.copy(alpha = if (c.dark) 0.12f else 0.07f) else Color.Transparent)
+                        .clickable { onTab(i) }
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(item.icon, contentDescription = item.label, tint = if (sel) c.accent else c.text, modifier = Modifier.size(22.dp))
+                    Text(
+                        item.label, fontSize = 10.sp, color = if (sel) c.accent else c.text,
+                        fontWeight = FontWeight.Medium, maxLines = 1
+                    )
+                }
             }
         }
     }

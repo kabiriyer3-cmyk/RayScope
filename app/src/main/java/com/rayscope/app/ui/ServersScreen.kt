@@ -1,6 +1,5 @@
 package com.rayscope.app.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -22,7 +21,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -76,7 +74,7 @@ private fun filterSort(all: List<Server>, f: SFilter, sort: SSort, q: String): L
 
 @Composable
 private fun MItem(text: String, onClick: () -> Unit) {
-    DropdownMenuItem(text = { Text(text, fontSize = 14.sp) }, onClick = onClick)
+    DropdownMenuItem(text = { Text(text, fontSize = 15.sp) }, onClick = onClick)
 }
 
 @Composable
@@ -108,173 +106,166 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
         val t = clipboard.getText()?.text.orEmpty()
         scope.launch { Actions.importText(t) }
     }
+    val top = pageTop()
+    val bottom = navBottom() + 170.dp
 
-    Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize()) {
-            Header("Серверы", subtitle = "${servers.size} всего · ${counts[SFilter.WORKING] ?: 0} рабочих") {
-                GlassIconButton(onClick = { showSearch = !showSearch }) {
-                    Icon(Icons.Filled.Search, contentDescription = "Поиск", tint = c.text, modifier = Modifier.size(19.dp))
-                }
-                GlassIconButton(onClick = { scope.launch { Actions.testAll() } }, enabled = !testing) {
-                    Icon(Icons.Filled.Refresh, contentDescription = "Проверить все", tint = c.accent, modifier = Modifier.size(19.dp))
-                }
-                Box {
-                    GlassIconButton(onClick = { sortOpen = true }) { Text("⇅", color = c.text, fontSize = 16.sp) }
-                    DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
-                        SSort.entries.forEach { s ->
-                            MItem((if (s == sort) "✓ " else "    ") + s.title) {
-                                sort = s
-                                sortOpen = false
-                            }
-                        }
-                    }
-                }
-                Box {
-                    GlassIconButton(onClick = { menuOpen = true }) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = "Меню", tint = c.text, modifier = Modifier.size(19.dp))
-                    }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        MItem("📋  Импорт из буфера") {
-                            menuOpen = false
-                            pasteAction()
-                        }
-                        MItem("➕  Добавить подписку") {
-                            menuOpen = false
-                            addSubOpen = true
-                        }
-                        MItem("🔄  Обновить подписки") {
-                            menuOpen = false
-                            scope.launch { Actions.updateAllSubs(false) }
-                        }
-                        MItem("📡  TCP-пинг всех") {
-                            menuOpen = false
-                            scope.launch { Actions.tcpAll() }
-                        }
-                        MItem("⚡  Лучший сервер") {
-                            menuOpen = false
-                            scope.launch {
-                                val b = Actions.pickBest()
-                                if (b == null) {
-                                    toast("Нет рабочих серверов")
-                                } else {
-                                    Repo.select(b.id)
-                                    toast("Лучший: ${b.cleanName()} (${b.delay} ms)")
-                                    if (VpnState.isConnected) RayVpnService.switchServer()
-                                }
-                            }
-                        }
-                        MItem("🗑  Удалить нерабочие") {
-                            menuOpen = false
-                            confirmDead = true
-                        }
-                        MItem("♻  Сбросить результаты") {
-                            menuOpen = false
-                            Repo.resetTests()
-                        }
-                        MItem("📤  Скопировать все ссылки") {
-                            menuOpen = false
-                            clipboard.setText(AnnotatedString(Actions.exportAll()))
-                            toast("Ссылки скопированы")
+    Page(
+        actions = {
+            ActionIcon(Icons.Filled.Search, "Поиск") { showSearch = !showSearch }
+            ActionIcon(Icons.Filled.Refresh, "Проверить все", tint = c.accent, enabled = !testing) {
+                scope.launch { Actions.testAll() }
+            }
+            Box {
+                ActionGlyph("⇅") { sortOpen = true }
+                DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
+                    SSort.entries.forEach { s ->
+                        MItem((if (s == sort) "✓ " else "    ") + s.title) {
+                            sort = s
+                            sortOpen = false
                         }
                     }
                 }
             }
-
-            if (showSearch) {
-                GlassField(
-                    value = query,
-                    onValueChange = { query = it },
-                    placeholder = "Имя, адрес, протокол…",
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
-                )
+            Box {
+                ActionIcon(Icons.Filled.MoreVert, "Меню") { menuOpen = true }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    MItem("📋  Импорт из буфера") {
+                        menuOpen = false
+                        pasteAction()
+                    }
+                    MItem("➕  Добавить подписку") {
+                        menuOpen = false
+                        addSubOpen = true
+                    }
+                    MItem("🔄  Обновить подписки") {
+                        menuOpen = false
+                        scope.launch { Actions.updateAllSubs(false) }
+                    }
+                    MItem("📡  TCP-пинг всех") {
+                        menuOpen = false
+                        scope.launch { Actions.tcpAll() }
+                    }
+                    MItem("⚡  Лучший сервер") {
+                        menuOpen = false
+                        scope.launch {
+                            val b = Actions.pickBest()
+                            if (b == null) {
+                                toast("Нет рабочих серверов")
+                            } else {
+                                Repo.select(b.id)
+                                toast("Лучший: ${b.cleanName()} (${b.delay} ms)")
+                                if (VpnState.isConnected) RayVpnService.switchServer()
+                            }
+                        }
+                    }
+                    MItem("🗑  Удалить нерабочие") {
+                        menuOpen = false
+                        confirmDead = true
+                    }
+                    MItem("♻  Сбросить результаты") {
+                        menuOpen = false
+                        Repo.resetTests()
+                    }
+                    MItem("📤  Скопировать все ссылки") {
+                        menuOpen = false
+                        clipboard.setText(AnnotatedString(Actions.exportAll()))
+                        toast("Ссылки скопированы")
+                    }
+                }
             }
-
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+        },
+        overlay = {
+            val fabColor = if (connected) Bad else c.accent
+            GlassSurface(
+                26.dp,
+                Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 16.dp, bottom = 86.dp).height(52.dp),
+                tint = fabColor.copy(alpha = 0.80f),
+                enabled = !busy,
+                onClick = onToggle
             ) {
-                items(SFilter.entries.toList()) { f ->
-                    GlassChip("${f.title} ${counts[f] ?: 0}", selected = filter == f) { filter = f }
-                }
-            }
-
-            if (testing) {
-                LinearProgressIndicator(
-                    progress = { if (prog.second == 0) 0f else prog.first.toFloat() / prog.second },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                    color = c.accent,
-                    trackColor = c.field
-                )
-                Text(
-                    "Проверка ${prog.first} / ${prog.second}…",
-                    color = c.hint, fontSize = 12.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-            }
-
-            if (servers.isEmpty()) {
-                EmptyServers(onPaste = pasteAction, onAddSub = { addSubOpen = true })
-            } else {
-                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 2.dp, bottom = 170.dp)) {
-                    if (filter == SFilter.ALL && query.isBlank()) {
-                        items(subs, key = { "sub_" + it.id }) { sub -> SubInfoCard(sub) }
-                    }
-                    if (shown.isEmpty()) {
-                        item {
-                            Text(
-                                "Нет серверов под этот фильтр",
-                                color = c.hint, fontSize = 14.sp,
-                                modifier = Modifier.padding(24.dp)
-                            )
-                        }
-                    }
-                    items(shown, key = { it.id }) { s ->
-                        ServerRow(
-                            s = s,
-                            selected = s.id == selectedId,
-                            active = connected && vpn.serverId == s.id,
-                            onClick = {
-                                Repo.select(s.id)
-                                if (connected && vpn.serverId != s.id) RayVpnService.switchServer()
-                            },
-                            onInfo = { onOpen(s.id) },
-                            onFav = { Repo.toggleFavorite(s.id) },
-                            onTest = { scope.launch { Actions.testOne(s.id, save = true) } }
-                        )
-                    }
+                Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (connected) Icons.Filled.Close else Icons.Filled.PlayArrow,
+                        contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        when (vpn.state) {
+                            ConnState.CONNECTED -> "Отключить"
+                            ConnState.CONNECTING -> "Подключение…"
+                            ConnState.STOPPING -> "Отключение…"
+                            ConnState.STOPPED -> "Подключить"
+                        },
+                        color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }
-
-        val fabColor = if (connected) Bad else c.accent
-        val fabShape = RoundedCornerShape(50)
-        Row(
-            Modifier
-                .align(Alignment.BottomEnd)
-                .navigationBarsPadding()
-                .padding(end = 16.dp, bottom = 88.dp)
-                .clip(fabShape)
-                .background(Brush.verticalGradient(listOf(fabColor.copy(alpha = 0.85f), fabColor)))
-                .background(Brush.linearGradient(0f to Color.White.copy(alpha = 0.25f), 0.5f to Color.Transparent))
-                .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.6f), Color.White.copy(alpha = 0.05f))), fabShape)
-                .clickable(enabled = !busy, onClick = onToggle)
-                .padding(horizontal = 18.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                if (connected) Icons.Filled.Close else Icons.Filled.PlayArrow,
-                contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp)
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                when (vpn.state) {
-                    ConnState.CONNECTED -> "Отключить"
-                    ConnState.CONNECTING -> "Подключение…"
-                    ConnState.STOPPING -> "Отключение…"
-                    ConnState.STOPPED -> "Подключить"
-                },
-                color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
-            )
+    ) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = top, bottom = bottom)) {
+            item(key = "title") {
+                LargeTitle("Серверы", "${servers.size} всего · ${counts[SFilter.WORKING] ?: 0} рабочих")
+            }
+            if (showSearch) {
+                item(key = "search") {
+                    InputField(
+                        value = query,
+                        onValueChange = { query = it },
+                        placeholder = "Имя, адрес, протокол…",
+                        onCard = false,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+                }
+            }
+            item(key = "filters") {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(SFilter.entries.toList()) { f ->
+                        Chip("${f.title} ${counts[f] ?: 0}", selected = filter == f) { filter = f }
+                    }
+                }
+            }
+            if (testing) {
+                item(key = "progress") {
+                    Column(Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
+                        LinearProgressIndicator(
+                            progress = { if (prog.second == 0) 0f else prog.first.toFloat() / prog.second },
+                            modifier = Modifier.fillMaxWidth(),
+                            color = c.accent,
+                            trackColor = c.divider
+                        )
+                        Text("Проверка ${prog.first} / ${prog.second}…", color = c.hint, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                    }
+                }
+            }
+            if (servers.isEmpty()) {
+                item(key = "empty") { EmptyServers(onPaste = pasteAction, onAddSub = { addSubOpen = true }) }
+            } else {
+                if (filter == SFilter.ALL && query.isBlank()) {
+                    items(subs, key = { "sub_" + it.id }) { sub -> SubInfoCard(sub) }
+                }
+                if (shown.isEmpty()) {
+                    item(key = "nothing") {
+                        Text("Нет серверов под этот фильтр", color = c.hint, fontSize = 15.sp, modifier = Modifier.padding(24.dp))
+                    }
+                }
+                items(shown, key = { it.id }) { s ->
+                    ServerRow(
+                        s = s,
+                        selected = s.id == selectedId,
+                        active = connected && vpn.serverId == s.id,
+                        onClick = {
+                            Repo.select(s.id)
+                            if (connected && vpn.serverId != s.id) RayVpnService.switchServer()
+                        },
+                        onInfo = { onOpen(s.id) },
+                        onFav = { Repo.toggleFavorite(s.id) },
+                        onTest = { scope.launch { Actions.testOne(s.id, save = true) } }
+                    )
+                }
+            }
         }
     }
 
@@ -316,11 +307,11 @@ fun ServerRow(
     onTest: () -> Unit,
 ) {
     val c = ray
-    val shape = RoundedCornerShape(18.dp)
-    var m: Modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp).glass(c, shape)
+    val shape = RoundedCornerShape(14.dp)
+    var m: Modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 3.dp).card(c)
     if (active) m = m.border(1.5.dp, Good, shape) else if (selected) m = m.border(1.5.dp, c.accent, shape)
     Row(
-        m.clickable(onClick = onClick).padding(start = 8.dp, end = 2.dp, top = 7.dp, bottom = 7.dp),
+        m.clickable(onClick = onClick).padding(start = 10.dp, end = 2.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         FlagBox(s.flagEmoji(), 40.dp)
@@ -341,14 +332,14 @@ fun ServerRow(
             }
         }
         DelayBadge(s.delay, onClick = onTest)
-        IconButton(onClick = onFav, modifier = Modifier.size(32.dp)) {
+        IconButton(onClick = onFav, modifier = Modifier.size(34.dp)) {
             Icon(
                 Icons.Filled.Star, contentDescription = "Избранное",
                 tint = if (s.favorite) Mid else c.hint.copy(alpha = 0.35f), modifier = Modifier.size(18.dp)
             )
         }
-        IconButton(onClick = onInfo, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Filled.Info, contentDescription = "Подробнее", tint = c.hint, modifier = Modifier.size(18.dp))
+        IconButton(onClick = onInfo, modifier = Modifier.size(34.dp)) {
+            Icon(Icons.Filled.Info, contentDescription = "Подробнее", tint = c.accent, modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -359,22 +350,21 @@ fun SubInfoCard(sub: Subscription) {
     val now = System.currentTimeMillis()
     val used = sub.upload + sub.download
     Column(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp)
-            .glass(c, RoundedCornerShape(18.dp)).padding(horizontal = 14.dp, vertical = 10.dp)
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 3.dp).card(c).padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("📦", fontSize = 15.sp)
             Spacer(Modifier.width(6.dp))
             Text(
-                sub.name.ifEmpty { "Подписка" }, color = c.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                sub.name.ifEmpty { "Подписка" }, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
             )
-            Text("${sub.serverCount} серв. · ${Fmt.ago(sub.lastUpdated)}", color = c.hint, fontSize = 11.sp)
+            Text("${sub.serverCount} серв. · ${Fmt.ago(sub.lastUpdated)}", color = c.hint, fontSize = 12.sp)
         }
         if (sub.total > 0) {
             LinearProgressIndicator(
                 progress = { (used.toFloat() / sub.total.toFloat()).coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp).height(5.dp).clip(RoundedCornerShape(50)),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp).height(4.dp).clip(RoundedCornerShape(50)),
                 color = c.accent,
                 trackColor = c.field
             )
@@ -402,21 +392,19 @@ fun SubInfoCard(sub: Subscription) {
 private fun EmptyServers(onPaste: () -> Unit, onAddSub: () -> Unit) {
     val c = ray
     Column(
-        Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 40.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("🛰", fontSize = 52.sp)
         Spacer(Modifier.height(8.dp))
-        Text("Серверов пока нет", color = c.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        Text("Серверов пока нет", color = c.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         Text(
             "Добавьте подписку или вставьте ссылки vless / vmess / trojan / ss / hy2",
-            color = c.hint, fontSize = 13.sp, textAlign = TextAlign.Center
+            color = c.hint, fontSize = 14.sp, textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(16.dp))
-        GlassButton("Добавить подписку", onClick = onAddSub, primary = true, modifier = Modifier.fillMaxWidth())
+        PillButton("Добавить подписку", onClick = onAddSub, primary = true, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(8.dp))
-        GlassButton("Вставить из буфера", onClick = onPaste, modifier = Modifier.fillMaxWidth())
-        Spacer(Modifier.height(100.dp))
+        PillButton("Вставить из буфера", onClick = onPaste, modifier = Modifier.fillMaxWidth())
     }
 }

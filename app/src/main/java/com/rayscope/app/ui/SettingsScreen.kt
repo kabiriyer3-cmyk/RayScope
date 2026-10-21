@@ -43,150 +43,154 @@ fun SettingsScreen(onApps: () -> Unit, onLogs: () -> Unit, onSubs: () -> Unit) {
     var perAppMode by remember { mutableIntStateOf(st.perAppMode) }
     val perAppCount = st.perAppSet.size
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        Header("Настройки", subtitle = if (vpn.state == ConnState.CONNECTED) "Параметры VPN применятся после переподключения" else null)
-
-        Section("Оформление", contentPadding = PaddingValues(12.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("Система", "Светлая", "Тёмная").forEachIndexed { i, t ->
-                    GlassChip(t, selected = theme == i) { Repo.setTheme(i) }
-                }
-            }
-        }
-
-        Section("Подписки") {
-            NavRow("Управление подписками", "${subs.size}", onClick = onSubs)
-            RowDivider()
-            SwitchRow("Обновлять при запуске", null, autoUpd) {
-                autoUpd = it
-                st.autoUpdateSubs = it
-            }
-            RowDivider()
-            SwitchRow("Проверять после обновления", "Сразу отделить рабочие от нерабочих", testAfter) {
-                testAfter = it
-                st.testAfterUpdate = it
-            }
-            GlassField(
-                value = ua,
-                onValueChange = {
-                    ua = it
-                    st.userAgent = it.trim()
-                },
-                placeholder = "v2rayNG/1.10.20",
-                label = "User-Agent для подписок",
-                modifier = Modifier.padding(bottom = 8.dp)
+    Page {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            Spacer(Modifier.height(pageTop()))
+            LargeTitle(
+                "Настройки",
+                if (vpn.state == ConnState.CONNECTED) "Параметры VPN применятся после переподключения" else null
             )
-        }
 
-        Section("Проверка серверов") {
-            GlassField(
-                value = testUrl,
-                onValueChange = {
-                    testUrl = it
-                    st.testUrl = it.trim()
-                },
-                placeholder = "https://www.gstatic.com/generate_204",
-                label = "URL для теста задержки"
-            )
-            Row(Modifier.fillMaxWidth().padding(top = 10.dp)) {
-                Text("Параллельных проверок", color = c.text, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                Text("${conc.toInt()}", color = c.accent, fontSize = 15.sp)
-            }
-            Slider(
-                value = conc,
-                onValueChange = {
-                    conc = it
-                    st.concurrency = it.toInt()
-                },
-                valueRange = 1f..32f,
-                steps = 30,
-                colors = SliderDefaults.colors(thumbColor = c.accent, activeTrackColor = c.accent, inactiveTrackColor = c.field)
-            )
-            RowDivider()
-            SwitchRow("Авто-переключение при сбое", "Если сервер упал, перейти на самый быстрый рабочий", failover) {
-                failover = it
-                st.autoFailover = it
-            }
-        }
-
-        Section("VPN") {
-            GlassField(
-                value = dns,
-                onValueChange = {
-                    dns = it
-                    st.dns = it
-                },
-                placeholder = "1.1.1.1, 8.8.8.8",
-                label = "DNS-серверы"
-            )
-            GlassField(
-                value = mtu,
-                onValueChange = { v ->
-                    mtu = v.filter { it.isDigit() }.take(5)
-                    val n = mtu.toIntOrNull()
-                    if (n != null && n in 1280..9000) st.mtu = n
-                },
-                placeholder = "1500",
-                label = "MTU (1280–9000)",
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.padding(bottom = 6.dp)
-            )
-            RowDivider()
-            SwitchRow("Локальная сеть напрямую", "192.168.x.x, 10.x.x.x мимо VPN", bypassLan) {
-                bypassLan = it
-                st.bypassLan = it
-            }
-            RowDivider()
-            SwitchRow("Маршрутизировать IPv6", "Защита от утечки IPv6", ipv6) {
-                ipv6 = it
-                st.ipv6 = it
-            }
-            RowDivider()
-            SwitchRow("Sniffing", "Определять домен по TLS/HTTP", sniff) {
-                sniff = it
-                st.sniffing = it
-            }
-        }
-
-        Section("Раздельное туннелирование") {
-            Row(Modifier.padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("Все", "Исключить", "Только").forEachIndexed { i, t ->
-                    GlassChip(t, selected = perAppMode == i) {
-                        perAppMode = i
-                        st.perAppMode = i
+            Section("Оформление", contentPadding = PaddingValues(12.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("Система", "Светлая", "Тёмная").forEachIndexed { i, t ->
+                        Chip(t, selected = theme == i, onCard = true) { Repo.setTheme(i) }
                     }
                 }
             }
-            Text(
-                when (perAppMode) {
+
+            Section("Подписки") {
+                NavRow("Управление подписками", "${subs.size}", onClick = onSubs)
+                RowDivider()
+                SwitchRow("Обновлять при запуске", null, autoUpd) {
+                    autoUpd = it
+                    st.autoUpdateSubs = it
+                }
+                RowDivider()
+                SwitchRow("Проверять после обновления", "Сразу отделить рабочие от нерабочих", testAfter) {
+                    testAfter = it
+                    st.testAfterUpdate = it
+                }
+                InputField(
+                    value = ua,
+                    onValueChange = {
+                        ua = it
+                        st.userAgent = it.trim()
+                    },
+                    placeholder = "v2rayNG/1.10.20",
+                    label = "User-Agent для подписок",
+                    modifier = Modifier.padding(bottom = 10.dp)
+                )
+            }
+
+            Section("Проверка серверов") {
+                InputField(
+                    value = testUrl,
+                    onValueChange = {
+                        testUrl = it
+                        st.testUrl = it.trim()
+                    },
+                    placeholder = "https://www.gstatic.com/generate_204",
+                    label = "URL для теста задержки"
+                )
+                Row(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                    Text("Параллельных проверок", color = c.text, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                    Text("${conc.toInt()}", color = c.accent, fontSize = 16.sp)
+                }
+                Slider(
+                    value = conc,
+                    onValueChange = {
+                        conc = it
+                        st.concurrency = it.toInt()
+                    },
+                    valueRange = 1f..32f,
+                    steps = 30,
+                    colors = SliderDefaults.colors(thumbColor = c.accent, activeTrackColor = c.accent, inactiveTrackColor = c.field)
+                )
+                RowDivider()
+                SwitchRow("Авто-переключение при сбое", "Если сервер упал, перейти на самый быстрый рабочий", failover) {
+                    failover = it
+                    st.autoFailover = it
+                }
+            }
+
+            Section("VPN") {
+                InputField(
+                    value = dns,
+                    onValueChange = {
+                        dns = it
+                        st.dns = it
+                    },
+                    placeholder = "1.1.1.1, 8.8.8.8",
+                    label = "DNS-серверы"
+                )
+                InputField(
+                    value = mtu,
+                    onValueChange = { v ->
+                        mtu = v.filter { it.isDigit() }.take(5)
+                        val n = mtu.toIntOrNull()
+                        if (n != null && n in 1280..9000) st.mtu = n
+                    },
+                    placeholder = "1500",
+                    label = "MTU (1280–9000)",
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                RowDivider()
+                SwitchRow("Локальная сеть напрямую", "192.168.x.x, 10.x.x.x мимо VPN", bypassLan) {
+                    bypassLan = it
+                    st.bypassLan = it
+                }
+                RowDivider()
+                SwitchRow("Маршрутизировать IPv6", "Защита от утечки IPv6", ipv6) {
+                    ipv6 = it
+                    st.ipv6 = it
+                }
+                RowDivider()
+                SwitchRow("Sniffing", "Определять домен по TLS/HTTP", sniff) {
+                    sniff = it
+                    st.sniffing = it
+                }
+            }
+
+            Section(
+                "Раздельное туннелирование",
+                footer = when (perAppMode) {
                     1 -> "Выбранные приложения пойдут мимо VPN"
                     2 -> "Через VPN пойдут только выбранные приложения"
                     else -> "Все приложения идут через VPN"
-                },
-                color = c.hint, fontSize = 12.sp
-            )
-            RowDivider()
-            NavRow("Выбрать приложения", "$perAppCount", enabled = perAppMode != 0, onClick = onApps)
-        }
-
-        Section("Система") {
-            NavRow("Always-on VPN и Kill switch") {
-                try {
-                    ctx.startActivity(Intent(android.provider.Settings.ACTION_VPN_SETTINGS))
-                } catch (e: Exception) {
-                    toast("Не удалось открыть настройки VPN")
                 }
+            ) {
+                Row(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("Все", "Исключить", "Только").forEachIndexed { i, t ->
+                        Chip(t, selected = perAppMode == i, onCard = true) {
+                            perAppMode = i
+                            st.perAppMode = i
+                        }
+                    }
+                }
+                RowDivider()
+                NavRow("Выбрать приложения", "$perAppCount", enabled = perAppMode != 0, onClick = onApps)
             }
-            Text(
-                "Включите «Постоянная VPN» и «Блокировать без VPN», чтобы трафик не утекал при обрыве.",
-                color = c.hint, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp)
-            )
-            RowDivider()
-            NavRow("Журнал событий", onClick = onLogs)
-            RowDivider()
-            KV("Ядро", CoreManager.version())
-            KV("Версия", BuildConfig.VERSION_NAME)
+
+            Section(
+                "Система",
+                footer = "Включите «Постоянная VPN» и «Блокировать без VPN», чтобы трафик не утекал при обрыве."
+            ) {
+                NavRow("Always-on VPN и Kill switch") {
+                    try {
+                        ctx.startActivity(Intent(android.provider.Settings.ACTION_VPN_SETTINGS))
+                    } catch (e: Exception) {
+                        toast("Не удалось открыть настройки VPN")
+                    }
+                }
+                RowDivider()
+                NavRow("Журнал событий", onClick = onLogs)
+                RowDivider()
+                KV("Ядро", CoreManager.version())
+                KV("Версия", BuildConfig.VERSION_NAME)
+            }
+            TabBottomSpacer()
         }
-        Spacer(Modifier.height(BottomInset))
     }
 }

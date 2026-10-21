@@ -9,7 +9,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
@@ -76,18 +75,19 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
 
     val isActive = vpn.state == ConnState.CONNECTED && vpn.serverId == s.id
 
-    Column(Modifier.fillMaxSize()) {
-        Header(s.cleanName(), subtitle = "${s.protocolLabel()} · ${s.network} · ${s.securityLabel()}", onBack = onBack) {
-            GlassIconButton(onClick = { Repo.toggleFavorite(s.id) }) {
-                Icon(Icons.Filled.Star, contentDescription = "Избранное", tint = if (s.favorite) Mid else c.hint, modifier = Modifier.size(19.dp))
-            }
-            GlassIconButton(onClick = { confirmDelete = true }) {
-                Icon(Icons.Filled.Delete, contentDescription = "Удалить", tint = Bad, modifier = Modifier.size(19.dp))
-            }
+    Page(
+        onBack = onBack,
+        actions = {
+            ActionIcon(Icons.Filled.Star, "Избранное", tint = if (s.favorite) Mid else c.text) { Repo.toggleFavorite(s.id) }
+            ActionIcon(Icons.Filled.Delete, "Удалить", tint = Bad) { confirmDelete = true }
         }
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+    ) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            Spacer(Modifier.height(pageTop()))
+            LargeTitle(s.cleanName(), "${s.protocolLabel()} · ${s.network} · ${s.securityLabel()}", big = false)
+
             Section("Состояние") {
-                Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     FlagBox(s.flagEmoji(), 44.dp)
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
@@ -97,9 +97,9 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                                 s.isDead -> "Сервер не отвечает"
                                 else -> "Ещё не проверялся"
                             },
-                            color = delayColor(s.delay), fontSize = 15.sp, fontWeight = FontWeight.SemiBold
+                            color = delayColor(s.delay), fontSize = 16.sp, fontWeight = FontWeight.SemiBold
                         )
-                        Text("${s.address}:${s.port}", color = c.hint, fontSize = 12.sp)
+                        Text("${s.address}:${s.port}", color = c.hint, fontSize = 13.sp)
                     }
                     DelayBadge(s.delay)
                 }
@@ -110,8 +110,8 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                 val stab = s.stability()
                 KV("Стабильность", if (stab < 0) "—" else "$stab% · ${s.successCount} ок / ${s.failCount} сбоев")
                 if (s.lastError.isNotEmpty()) KV("Ошибка", s.lastError, Bad)
-                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    GlassButton(
+                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PillButton(
                         if (testing) "Тест…" else "Проверить",
                         enabled = !testing,
                         onClick = {
@@ -123,7 +123,7 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                         },
                         modifier = Modifier.weight(1f)
                     )
-                    GlassButton(
+                    PillButton(
                         if (isActive) "Подключён" else "Подключить",
                         primary = true,
                         color = if (isActive) Good else c.accent,
@@ -140,10 +140,10 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
             val warns = s.warnings()
             Section("Аудит конфигурации") {
                 if (warns.isEmpty()) {
-                    Text("✓ Явных проблем не найдено", color = Good, fontSize = 13.sp, modifier = Modifier.padding(vertical = 6.dp))
+                    Text("✓ Явных проблем не найдено", color = Good, fontSize = 14.sp, modifier = Modifier.padding(vertical = 8.dp))
                 } else {
                     warns.forEach { w ->
-                        Text("⚠ $w", color = Mid, fontSize = 13.sp, modifier = Modifier.padding(vertical = 4.dp))
+                        Text("⚠ $w", color = Mid, fontSize = 14.sp, modifier = Modifier.padding(vertical = 5.dp))
                     }
                 }
             }
@@ -196,14 +196,14 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                 Text(
                     if (showRaw || raw.length <= 70) raw else raw.take(70) + "…",
                     color = c.hint, fontSize = 12.sp,
-                    modifier = Modifier.padding(vertical = 6.dp).clickable { showRaw = !showRaw }
+                    modifier = Modifier.padding(vertical = 8.dp).clickable { showRaw = !showRaw }
                 )
-                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    GlassButton("Копировать", onClick = {
+                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PillButton("Копировать", onClick = {
                         clipboard.setText(AnnotatedString(raw))
                         toast("Ссылка скопирована")
                     }, modifier = Modifier.weight(1f))
-                    GlassButton("Поделиться", onClick = {
+                    PillButton("Поделиться", onClick = {
                         try {
                             val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, raw)
                             ctx.startActivity(Intent.createChooser(i, "Поделиться"))
@@ -211,7 +211,7 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                             toast("Не удалось поделиться")
                         }
                     }, modifier = Modifier.weight(1f))
-                    GlassButton("JSON", onClick = {
+                    PillButton("JSON", onClick = {
                         try {
                             val json = JSONObject(XrayConfig.build(s, Repo.settings, tun = false)).toString(2)
                             clipboard.setText(AnnotatedString(json))
