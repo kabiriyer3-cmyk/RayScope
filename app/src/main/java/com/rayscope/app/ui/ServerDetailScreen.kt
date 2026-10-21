@@ -16,7 +16,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rayscope.app.core.ConnState
@@ -76,6 +78,7 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
 
     val isActive = vpn.state == ConnState.CONNECTED && vpn.serverId == s.id
     val spin = if (testing) spinAngle(800) else null
+    val stateColor = if (isActive) Good else delayColor(s.delay)
 
     Page(
         title = s.cleanName(),
@@ -91,37 +94,55 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
     ) {
         Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
             Spacer(Modifier.height(pageTop()))
-            LargeTitle(s.cleanName(), "${s.protocolLabel()} · ${s.network} · ${s.securityLabel()}", big = false)
 
-            Column(Modifier.appear(0).fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).card(c, 20.dp).padding(14.dp)) {
+            // ---- hero
+            Column(Modifier.appear(0).fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).card(c, 24.dp).padding(18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    FlagBox(s.flagEmoji(), 52.dp)
-                    Spacer(Modifier.width(12.dp))
+                    FlagBox(s.flagEmoji(), 56.dp)
+                    Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
-                            when {
-                                isActive -> "Подключён сейчас"
-                                s.isWorking -> "Сервер рабочий"
-                                s.isDead -> "Не отвечает"
-                                else -> "Ещё не проверялся"
-                            },
-                            color = if (isActive) Good else delayColor(s.delay), fontSize = 16.sp, fontWeight = FontWeight.SemiBold
+                            s.cleanName(), color = c.text, fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 24.sp
                         )
-                        Text("${s.address}:${s.port}", color = c.hint, fontSize = 13.sp, maxLines = 1)
+                        Text(
+                            "${s.address}:${s.port}", color = c.hint, fontSize = 13.sp, fontFamily = FontFamily.Monospace,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
                     }
-                    Column(horizontalAlignment = Alignment.End) {
-                        TickerText(if (s.delay >= 0) "${s.delay}" else "—", delayColor(s.delay), 24.sp, FontWeight.Bold)
-                        Text("ms", color = c.hint, fontSize = 11.sp)
+                }
+                Spacer(Modifier.height(14.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Tag(s.protocolLabel().uppercase(), c.accent)
+                    Tag(s.network.uppercase())
+                    Tag(s.securityLabel().uppercase())
+                    if (s.flow.isNotEmpty()) Tag("VISION")
+                }
+                Spacer(Modifier.height(16.dp))
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Column(Modifier.weight(1f)) {
+                        CapsLabel(
+                            when {
+                                isActive -> "подключён сейчас"
+                                s.isWorking -> "сервер рабочий"
+                                s.isDead -> "не отвечает"
+                                else -> "ещё не проверялся"
+                            },
+                            color = stateColor
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        LatencyText(s.delay, 34.sp)
                     }
+                    SignalBars(s.delay, Modifier.padding(bottom = 8.dp))
                 }
                 if (s.lastError.isNotEmpty()) {
                     Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(RayIcons.Alert, contentDescription = null, tint = Bad, modifier = Modifier.size(14.dp))
-                        Spacer(Modifier.width(5.dp))
+                        Spacer(Modifier.width(6.dp))
                         Text(s.lastError, color = Bad, fontSize = 12.sp)
                     }
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(16.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PillButton(
                         if (testing) "Тест…" else "Проверить",
@@ -152,56 +173,63 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                 }
             }
 
-            Section("Проверки", modifier = Modifier.appear(1), padded = false) {
-                SettingRow(RayIcons.Activity, Good, "Задержка через прокси", value = Fmt.ms(s.delay))
-                SettingRow(RayIcons.Signal, Blue, "TCP-пинг", value = if (s.protocol == "hysteria2") "н/д (UDP)" else Fmt.ms(s.tcpPing))
+            Group("Проверки", modifier = Modifier.appear(1)) {
+                PrefRow(RayIcons.Activity, Good, "Задержка через прокси", value = Fmt.ms(s.delay))
+                PrefRow(RayIcons.Signal, Blue, "TCP-пинг", value = if (s.protocol == "hysteria2") "н/д (UDP)" else Fmt.ms(s.tcpPing))
                 val stab = s.stability()
-                SettingRow(
+                PrefRow(
                     RayIcons.Gauge, Orange, "Стабильность",
                     value = if (stab < 0) "—" else "$stab% · ${s.successCount}/${s.successCount + s.failCount}"
                 )
-                SettingRow(RayIcons.Clock, Gray, "Последняя проверка", value = if (s.lastTested > 0) Fmt.date(s.lastTested) else "никогда", divider = false)
+                PrefRow(
+                    RayIcons.Clock, Gray, "Последняя проверка",
+                    value = if (s.lastTested > 0) Fmt.ago(s.lastTested) else "никогда", divider = false
+                )
             }
 
             val warns = s.warnings()
-            Section("Аудит конфигурации", modifier = Modifier.appear(2), padded = false) {
+            Group(
+                "Аудит конфигурации", modifier = Modifier.appear(2),
+                trailing = { Tag(if (warns.isEmpty()) "OK" else "${warns.size}", if (warns.isEmpty()) Good else Mid) }
+            ) {
                 if (warns.isEmpty()) {
-                    SettingRow(RayIcons.ShieldCheck, Good, "Явных проблем не найдено", divider = false)
+                    PrefRow(RayIcons.ShieldCheck, Good, "Явных проблем не найдено", divider = false)
                 } else {
                     warns.forEachIndexed { i, w ->
-                        SettingRow(RayIcons.Alert, Orange, w, divider = i != warns.lastIndex)
+                        PrefRow(RayIcons.Alert, Mid, w, divider = i != warns.lastIndex)
                     }
                 }
             }
 
-            Section("Параметры", modifier = Modifier.appear(3)) {
+            Group("Параметры", modifier = Modifier.appear(3)) {
                 KV("Протокол", s.protocolLabel())
-                KV("Адрес", s.address)
-                KV("Порт", s.port.toString())
-                KV(if (s.protocol == "vless" || s.protocol == "vmess") "UUID" else "Пароль", maskSecret(s.uuid))
-                KVIf("Шифрование", s.method)
-                KVIf("Flow", s.flow)
-                KV("Транспорт", s.network)
-                KVIf("Header", s.headerType)
-                KVIf("Host", s.host)
-                KVIf("Path", s.path)
-                KVIf("gRPC service", s.serviceName)
-                KVIf("Режим", s.mode)
+                KV("Адрес", s.address, mono = true)
+                KV("Порт", s.port.toString(), mono = true)
+                KV(if (s.protocol == "vless" || s.protocol == "vmess") "UUID" else "Пароль", maskSecret(s.uuid), mono = true)
+                KVIf("Шифрование", s.method, mono = true)
+                KVIf("Flow", s.flow, mono = true)
+                KV("Транспорт", s.network, mono = true)
+                KVIf("Header", s.headerType, mono = true)
+                KVIf("Host", s.host, mono = true)
+                KVIf("Path", s.path, mono = true)
+                KVIf("gRPC service", s.serviceName, mono = true)
+                KVIf("Режим", s.mode, mono = true)
                 KV("Защита", s.securityLabel())
-                KVIf("SNI", s.sni)
-                KVIf("Fingerprint", s.fingerprint)
-                KVIf("ALPN", s.alpn)
-                KVIf("REALITY pbk", s.publicKey)
-                KVIf("shortId", s.shortId)
-                KVIf("spiderX", s.spiderX)
+                KVIf("SNI", s.sni, mono = true)
+                val fp = s.fingerprint.ifEmpty { Repo.settings.defaultFingerprint.let { if (it.isEmpty()) "" else "$it (по умолчанию)" } }
+                KVIf("Fingerprint", fp, mono = true)
+                KVIf("ALPN", s.alpn, mono = true)
+                KVIf("REALITY pbk", s.publicKey, mono = true)
+                KVIf("shortId", s.shortId, mono = true)
+                KVIf("spiderX", s.spiderX, mono = true)
                 if (s.insecure) KV("allowInsecure", "да", Mid)
-                if (s.obfsPassword.isNotEmpty()) KV("Obfs", "salamander")
+                if (s.obfsPassword.isNotEmpty()) KV("Obfs", "salamander", mono = true)
                 val sub = Repo.subs.value.firstOrNull { it.id == s.subId }
                 KV("Источник", sub?.name ?: "добавлен вручную")
             }
 
-            Section("Сервер в сети", modifier = Modifier.appear(4)) {
-                KV("IP (DNS)", resolved ?: "определяю…")
+            Group("Сервер в сети", modifier = Modifier.appear(4)) {
+                KV("IP (DNS)", resolved ?: "определяю…", mono = true)
                 val g = geo
                 val ge = geoErr
                 if (g != null) {
@@ -209,7 +237,7 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                     KV("Город", listOf(g.region, g.city).filter { it.isNotEmpty() }.joinToString(", "))
                     KV("Провайдер", g.isp)
                     KV("Организация", g.org)
-                    KV("ASN", g.asn)
+                    KV("ASN", g.asn, mono = true)
                     val h = g.hosting
                     if (h != null) KV("Тип", if (h) "Дата-центр" else "Домашний / мобильный")
                 } else if (ge != null) {
@@ -217,14 +245,17 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                 }
             }
 
-            Section("Ссылка и конфиг", modifier = Modifier.appear(5)) {
+            Group("Ссылка и конфиг", modifier = Modifier.appear(5)) {
                 val raw = s.rawLink
                 Text(
-                    if (showRaw || raw.length <= 70) raw else raw.take(70) + "…",
-                    color = c.hint, fontSize = 12.sp,
-                    modifier = Modifier.padding(vertical = 8.dp).clickable { showRaw = !showRaw }
+                    if (showRaw || raw.length <= 80) raw else raw.take(80) + "…",
+                    color = c.hint, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.fillMaxWidth().clickable { showRaw = !showRaw }.padding(horizontal = 16.dp, vertical = 12.dp)
                 )
-                Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     MiniAction(RayIcons.Copy, "Копия", c.accent) {
                         clipboard.setText(AnnotatedString(raw))
                         toast("Ссылка скопирована")
@@ -255,9 +286,10 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            icon = { IconBadge(RayIcons.Trash, Bad, 44.dp, 24.dp) },
-            title = { Text("Удалить сервер?") },
-            text = { Text(s.cleanName()) },
+            containerColor = c.surface,
+            icon = { IconTile(RayIcons.Trash, Bad, 46.dp, 24.dp) },
+            title = { Text("Удалить сервер?", color = c.text) },
+            text = { Text(s.cleanName(), color = c.hint) },
             confirmButton = {
                 TextButton(onClick = {
                     confirmDelete = false
@@ -265,7 +297,7 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                     onBack()
                 }) { Text("Удалить", color = Bad) }
             },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Отмена") } }
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Отмена", color = c.hint) } }
         )
     }
 }
