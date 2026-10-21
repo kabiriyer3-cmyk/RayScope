@@ -50,6 +50,8 @@ fun ServerDetailScreen(id: String, onBack: () -> Unit, onConnect: () -> Unit) {
 @Composable
 private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
     val c = ray
+    val ui = look
+    val dev = ui.dev
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
@@ -73,12 +75,15 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
             } catch (e: Exception) {
                 geoErr = e.message ?: "ошибка"
             }
+        } else {
+            geoErr = "адрес не разрешён"
         }
     }
 
     val isActive = vpn.state == ConnState.CONNECTED && vpn.serverId == s.id
     val spin = if (testing) spinAngle(800) else null
     val stateColor = if (isActive) Good else delayColor(s.delay)
+    val sub = Repo.subs.value.firstOrNull { it.id == s.subId }
 
     Page(
         title = s.cleanName(),
@@ -106,7 +111,9 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                             maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 24.sp
                         )
                         Text(
-                            "${s.address}:${s.port}", color = c.hint, fontSize = 13.sp, fontFamily = FontFamily.Monospace,
+                            if (dev) "${s.address}:${s.port}" else (sub?.name ?: "добавлен вручную"),
+                            color = c.hint, fontSize = 13.sp,
+                            fontFamily = if (dev) FontFamily.Monospace else FontFamily.Default,
                             maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
                     }
@@ -139,7 +146,7 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                     Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(RayIcons.Alert, contentDescription = null, tint = Bad, modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text(s.lastError, color = Bad, fontSize = 12.sp)
+                        Text(s.lastError, color = Bad, fontSize = 12.sp, maxLines = if (dev) 4 else 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
                 Spacer(Modifier.height(16.dp))
@@ -174,12 +181,14 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
             }
 
             Group("Проверки", modifier = Modifier.appear(1)) {
-                PrefRow(RayIcons.Activity, Good, "Задержка через прокси", value = Fmt.ms(s.delay))
-                PrefRow(RayIcons.Signal, Blue, "TCP-пинг", value = if (s.protocol == "hysteria2") "н/д (UDP)" else Fmt.ms(s.tcpPing))
+                PrefRow(RayIcons.Activity, Good, "Задержка", value = Fmt.ms(s.delay))
+                if (dev) {
+                    PrefRow(RayIcons.Signal, Blue, "TCP-пинг", value = if (s.protocol == "hysteria2") "н/д (UDP)" else Fmt.ms(s.tcpPing))
+                }
                 val stab = s.stability()
                 PrefRow(
                     RayIcons.Gauge, Orange, "Стабильность",
-                    value = if (stab < 0) "—" else "$stab% · ${s.successCount}/${s.successCount + s.failCount}"
+                    value = if (stab < 0) "—" else if (dev) "$stab% · ${s.successCount}/${s.successCount + s.failCount}" else "$stab%"
                 )
                 PrefRow(
                     RayIcons.Clock, Gray, "Последняя проверка",
@@ -188,75 +197,94 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
             }
 
             val warns = s.warnings()
-            Group(
-                "Аудит конфигурации", modifier = Modifier.appear(2),
-                trailing = { Tag(if (warns.isEmpty()) "OK" else "${warns.size}", if (warns.isEmpty()) Good else Mid) }
-            ) {
-                if (warns.isEmpty()) {
-                    PrefRow(RayIcons.ShieldCheck, Good, "Явных проблем не найдено", divider = false)
-                } else {
-                    warns.forEachIndexed { i, w ->
-                        PrefRow(RayIcons.Alert, Mid, w, divider = i != warns.lastIndex)
+            if (dev || warns.isNotEmpty()) {
+                Group(
+                    "Аудит конфигурации", modifier = Modifier.appear(2),
+                    trailing = { Tag(if (warns.isEmpty()) "OK" else "${warns.size}", if (warns.isEmpty()) Good else Mid) }
+                ) {
+                    if (warns.isEmpty()) {
+                        PrefRow(RayIcons.ShieldCheck, Good, "Явных проблем не найдено", divider = false)
+                    } else {
+                        warns.forEachIndexed { i, w ->
+                            PrefRow(RayIcons.Alert, Mid, w, divider = i != warns.lastIndex)
+                        }
                     }
                 }
             }
 
-            Group("Параметры", modifier = Modifier.appear(3)) {
-                KV("Протокол", s.protocolLabel())
-                KV("Адрес", s.address, mono = true)
-                KV("Порт", s.port.toString(), mono = true)
-                KV(if (s.protocol == "vless" || s.protocol == "vmess") "UUID" else "Пароль", maskSecret(s.uuid), mono = true)
-                KVIf("Шифрование", s.method, mono = true)
-                KVIf("Flow", s.flow, mono = true)
-                KV("Транспорт", s.network, mono = true)
-                KVIf("Header", s.headerType, mono = true)
-                KVIf("Host", s.host, mono = true)
-                KVIf("Path", s.path, mono = true)
-                KVIf("gRPC service", s.serviceName, mono = true)
-                KVIf("Режим", s.mode, mono = true)
-                KV("Защита", s.securityLabel())
-                KVIf("SNI", s.sni, mono = true)
-                val fp = s.fingerprint.ifEmpty { Repo.settings.defaultFingerprint.let { if (it.isEmpty()) "" else "$it (по умолчанию)" } }
-                KVIf("Fingerprint", fp, mono = true)
-                KVIf("ALPN", s.alpn, mono = true)
-                KVIf("REALITY pbk", s.publicKey, mono = true)
-                KVIf("shortId", s.shortId, mono = true)
-                KVIf("spiderX", s.spiderX, mono = true)
-                if (s.insecure) KV("allowInsecure", "да", Mid)
-                if (s.obfsPassword.isNotEmpty()) KV("Obfs", "salamander", mono = true)
-                val sub = Repo.subs.value.firstOrNull { it.id == s.subId }
-                KV("Источник", sub?.name ?: "добавлен вручную")
+            if (dev) {
+                Group("Параметры", modifier = Modifier.appear(3), trailing = { DevTag() }) {
+                    KV("Протокол", s.protocolLabel())
+                    KV("Адрес", s.address, mono = true)
+                    KV("Порт", s.port.toString(), mono = true)
+                    KV(if (s.protocol == "vless" || s.protocol == "vmess") "UUID" else "Пароль", maskSecret(s.uuid), mono = true)
+                    KVIf("Шифрование", s.method, mono = true)
+                    KVIf("Flow", s.flow, mono = true)
+                    KV("Транспорт", s.network, mono = true)
+                    KVIf("Header", s.headerType, mono = true)
+                    KVIf("Host", s.host, mono = true)
+                    KVIf("Path", s.path, mono = true)
+                    KVIf("gRPC service", s.serviceName, mono = true)
+                    KVIf("Режим", s.mode, mono = true)
+                    KV("Защита", s.securityLabel())
+                    KVIf("SNI", s.sni, mono = true)
+                    val fp = s.fingerprint.ifEmpty { Repo.settings.defaultFingerprint.let { if (it.isEmpty()) "" else "$it (по умолчанию)" } }
+                    KVIf("Fingerprint", fp, mono = true)
+                    KVIf("ALPN", s.alpn, mono = true)
+                    KVIf("REALITY pbk", s.publicKey, mono = true)
+                    KVIf("shortId", s.shortId, mono = true)
+                    KVIf("spiderX", s.spiderX, mono = true)
+                    if (s.insecure) KV("allowInsecure", "да", Mid)
+                    if (s.obfsPassword.isNotEmpty()) KV("Obfs", "salamander", mono = true)
+                    KV("Источник", sub?.name ?: "добавлен вручную")
+                }
+            } else {
+                Group("Параметры", modifier = Modifier.appear(3)) {
+                    KV("Протокол", s.protocolLabel())
+                    KV("Транспорт", s.network)
+                    KV("Защита", s.securityLabel())
+                    KVIf("SNI", s.sni, mono = true)
+                    KV("Источник", sub?.name ?: "добавлен вручную")
+                }
             }
 
-            Group("Сервер в сети", modifier = Modifier.appear(4)) {
-                KV("IP (DNS)", resolved ?: "определяю…", mono = true)
+            Group("Где сервер", modifier = Modifier.appear(4)) {
+                if (dev) KV("IP (DNS)", resolved ?: "определяю…", mono = true)
                 val g = geo
                 val ge = geoErr
                 if (g != null) {
                     KV("Страна", "${Fmt.flag(g.countryCode)} ${g.country}")
                     KV("Город", listOf(g.region, g.city).filter { it.isNotEmpty() }.joinToString(", "))
                     KV("Провайдер", g.isp)
-                    KV("Организация", g.org)
-                    KV("ASN", g.asn, mono = true)
+                    if (dev) {
+                        KV("Организация", g.org)
+                        KV("ASN", g.asn, mono = true)
+                    }
                     val h = g.hosting
                     if (h != null) KV("Тип", if (h) "Дата-центр" else "Домашний / мобильный")
                 } else if (ge != null) {
-                    KV("Гео", ge, Bad)
+                    KV("Гео", if (dev) ge else "не удалось определить", Bad)
+                } else if (!dev) {
+                    KV("Страна", "определяю…")
                 }
             }
 
-            Group("Ссылка и конфиг", modifier = Modifier.appear(5)) {
+            Group(if (dev) "Ссылка и конфиг" else "Поделиться", modifier = Modifier.appear(5)) {
                 val raw = s.rawLink
-                Text(
-                    if (showRaw || raw.length <= 80) raw else raw.take(80) + "…",
-                    color = c.hint, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.fillMaxWidth().clickable { showRaw = !showRaw }.padding(horizontal = 16.dp, vertical = 12.dp)
-                )
+                if (dev) {
+                    Text(
+                        if (showRaw || raw.length <= 80) raw else raw.take(80) + "…",
+                        color = c.hint, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.fillMaxWidth().clickable { showRaw = !showRaw }.padding(horizontal = 16.dp, vertical = 12.dp)
+                    )
+                } else {
+                    Spacer(Modifier.height(14.dp))
+                }
                 Row(
                     Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    MiniAction(RayIcons.Copy, "Копия", c.accent) {
+                    MiniAction(RayIcons.Copy, "Скопировать", c.accent) {
                         clipboard.setText(AnnotatedString(raw))
                         toast("Ссылка скопирована")
                     }
@@ -268,13 +296,15 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                             toast("Не удалось поделиться")
                         }
                     }
-                    MiniAction(RayIcons.Code, "JSON", c.accent) {
-                        try {
-                            val json = JSONObject(XrayConfig.build(s, Repo.settings, tun = false)).toString(2)
-                            clipboard.setText(AnnotatedString(json))
-                            toast("JSON-конфиг Xray скопирован")
-                        } catch (e: Exception) {
-                            toast("Ошибка: ${e.message}")
+                    if (dev) {
+                        MiniAction(RayIcons.Code, "JSON", Purple) {
+                            try {
+                                val json = JSONObject(XrayConfig.build(s, Repo.settings, tun = false)).toString(2)
+                                clipboard.setText(AnnotatedString(json))
+                                toast("JSON-конфиг Xray скопирован")
+                            } catch (e: Exception) {
+                                toast("Ошибка: ${e.message}")
+                            }
                         }
                     }
                 }
