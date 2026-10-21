@@ -24,6 +24,8 @@ enum class SetPage(val title: String, val subtitle: String) {
     PROXY("Локальный прокси", "SOCKS5 / HTTP на телефоне"),
     SPLIT("Раздельное туннелирование", "Какие приложения идут через VPN"),
     SUBS("Подписки", "Обновление и User-Agent"),
+    LOOK("Оформление", "Тема, акцент, стекло, форма и виджеты"),
+    DEV("Режим разработчика", "Технические детали, журнал и инструменты"),
 }
 
 @Composable
@@ -43,6 +45,8 @@ fun SettingsPageScreen(page: SetPage, onBack: () -> Unit, onOpen: (Route) -> Uni
                 SetPage.PROXY -> ProxyPrefs()
                 SetPage.SPLIT -> SplitPrefs(onOpen)
                 SetPage.SUBS -> SubsPrefs(onOpen)
+                SetPage.LOOK -> LookPrefs()
+                SetPage.DEV -> DevPrefs(onOpen)
             }
             Spacer(Modifier.navigationBarsPadding().height(32.dp))
         }
@@ -55,6 +59,7 @@ private val st: Settings get() = Repo.settings
 
 @Composable
 private fun ConnectionPrefs() {
+    val dev = look.dev
     var onLaunch by remember { mutableStateOf(st.connectOnLaunch) }
     var pickBest by remember { mutableStateOf(st.pickBestOnConnect) }
     var netRe by remember { mutableStateOf(st.reconnectOnNetworkChange) }
@@ -106,57 +111,63 @@ private fun ConnectionPrefs() {
             mux = it
             st.muxEnabled = it
         }
-        PrefSlider(icon = null, tint = Purple, title = "Потоков TCP", value = muxC, range = 1..128, enabled = mux) {
+        PrefSlider(icon = null, tint = Purple, title = "Потоков TCP", value = muxC, range = 1..128, enabled = mux, divider = dev) {
             muxC = it
             st.muxConcurrency = it
         }
-        PrefSlider(icon = null, tint = Purple, title = "Потоков XUDP", value = xudpC, range = 1..128, enabled = mux) {
-            xudpC = it
-            st.muxXudpConcurrency = it
-        }
-        val quicValues = listOf("reject", "allow", "skip")
-        PrefChoice(
-            icon = null, tint = Purple, title = "QUIC (UDP 443) в Mux",
-            options = listOf("Блокировать", "Разрешить", "Мимо Mux"),
-            selected = quicValues.indexOf(quic).coerceAtLeast(0), enabled = mux, divider = false
-        ) {
-            quic = quicValues[it]
-            st.muxXudpQuic = quic
+        if (dev) {
+            PrefSlider(icon = null, tint = Purple, title = "Потоков XUDP", value = xudpC, range = 1..128, enabled = mux) {
+                xudpC = it
+                st.muxXudpConcurrency = it
+            }
+            val quicValues = listOf("reject", "allow", "skip")
+            PrefChoice(
+                icon = null, tint = Purple, title = "QUIC (UDP 443) в Mux",
+                options = listOf("Блокировать", "Разрешить", "Мимо Mux"),
+                selected = quicValues.indexOf(quic).coerceAtLeast(0), enabled = mux, divider = false
+            ) {
+                quic = quicValues[it]
+                st.muxXudpQuic = quic
+            }
         }
     }
 
     Group("TCP", modifier = Modifier.appear(2)) {
-        PrefSwitch(RayIcons.Bolt, Teal, "TCP Fast Open", "Меньше задержка на новых соединениях, если сервер поддерживает", tfo) {
+        PrefSwitch(RayIcons.Bolt, Teal, "TCP Fast Open", "Меньше задержка на новых соединениях, если сервер поддерживает", tfo, divider = dev) {
             tfo = it
             st.tcpFastOpen = it
         }
-        PrefSlider(
-            icon = RayIcons.Timer, tint = Teal, title = "Keep-alive",
-            subtitle = "Как часто проверять простаивающие соединения",
-            value = ka, range = 0..300, step = 15, divider = false,
-            format = { if (it == 0) "система" else "$it с" }
-        ) {
-            ka = it
-            st.keepAliveIdle = it
+        if (dev) {
+            PrefSlider(
+                icon = RayIcons.Timer, tint = Teal, title = "Keep-alive",
+                subtitle = "Как часто проверять простаивающие соединения",
+                value = ka, range = 0..300, step = 15, divider = false,
+                format = { if (it == 0) "система" else "$it с" }
+            ) {
+                ka = it
+                st.keepAliveIdle = it
+            }
         }
     }
 
-    Group("Таймауты ядра", modifier = Modifier.appear(3)) {
-        PrefSlider(
-            icon = RayIcons.Clock, tint = Blue, title = "Рукопожатие",
-            subtitle = "Сколько ждать установления соединения с сервером",
-            value = hs, range = 1..16, format = { "$it с" }
-        ) {
-            hs = it
-            st.handshakeTimeout = it
-        }
-        PrefSlider(
-            icon = RayIcons.Timer, tint = Blue, title = "Простой соединения",
-            subtitle = "Через сколько закрывать неактивные соединения",
-            value = idle, range = 30..1200, step = 30, divider = false, format = { "$it с" }
-        ) {
-            idle = it
-            st.connIdle = it
+    if (dev) {
+        Group("Таймауты ядра", modifier = Modifier.appear(3), trailing = { DevTag() }) {
+            PrefSlider(
+                icon = RayIcons.Clock, tint = Blue, title = "Рукопожатие",
+                subtitle = "Сколько ждать установления соединения с сервером",
+                value = hs, range = 1..16, format = { "$it с" }
+            ) {
+                hs = it
+                st.handshakeTimeout = it
+            }
+            PrefSlider(
+                icon = RayIcons.Timer, tint = Blue, title = "Простой соединения",
+                subtitle = "Через сколько закрывать неактивные соединения",
+                value = idle, range = 30..1200, step = 30, divider = false, format = { "$it с" }
+            ) {
+                idle = it
+                st.connIdle = it
+            }
         }
     }
 
@@ -165,18 +176,20 @@ private fun ConnectionPrefs() {
         PrefChoice(
             icon = RayIcons.Network, tint = Indigo, title = "MTU",
             subtitle = "Уменьшите, если сайты грузятся не до конца (мобильная сеть, PPPoE)",
-            options = mtus.map { "$it" }, selected = mtus.indexOf(mtu)
+            options = mtus.map { "$it" }, selected = mtus.indexOf(mtu), divider = dev
         ) {
             mtu = mtus[it]
             st.mtu = mtu
         }
-        val levels = listOf("none", "error", "warning", "info", "debug")
-        PrefChoice(
-            icon = RayIcons.Logs, tint = Gray, title = "Уровень логов ядра",
-            options = levels, selected = levels.indexOf(log).coerceAtLeast(0), divider = false
-        ) {
-            log = levels[it]
-            st.logLevel = log
+        if (dev) {
+            val levels = listOf("none", "error", "warning", "info", "debug")
+            PrefChoice(
+                icon = RayIcons.Logs, tint = Gray, title = "Уровень логов ядра",
+                options = levels, selected = levels.indexOf(log).coerceAtLeast(0), divider = false
+            ) {
+                log = levels[it]
+                st.logLevel = log
+            }
         }
     }
 }
@@ -241,7 +254,7 @@ private fun PingPrefs() {
     Group("Точность", modifier = Modifier.appear(2)) {
         PrefSlider(
             icon = RayIcons.Timer, tint = Orange, title = "Таймаут",
-            subtitle = "Медленнее — считается нерабочим. Также лимит на TCP-подключение",
+            subtitle = "Медленнее считается нерабочим. Также лимит на TCP-подключение",
             value = timeout, range = 1000..10000, step = 500,
             format = { if (it % 1000 == 0) "${it / 1000} с" else "${it / 1000}.5 с" }
         ) {
@@ -393,6 +406,7 @@ private fun DnsPrefs() {
 
 @Composable
 private fun RoutingPrefs() {
+    val dev = look.dev
     var bypassLan by remember { mutableStateOf(st.bypassLan) }
     var ipv6 by remember { mutableStateOf(st.ipv6) }
     var quic by remember { mutableStateOf(st.blockQuic) }
@@ -411,33 +425,37 @@ private fun RoutingPrefs() {
             ipv6 = it
             st.ipv6 = it
         }
-        PrefSwitch(RayIcons.Ban, Pink, "Блокировать QUIC", "UDP 443 в блок: браузеры и YouTube перейдут на TCP, часто это стабильнее", quic) {
+        PrefSwitch(RayIcons.Ban, Pink, "Блокировать QUIC", "UDP 443 в блок: браузеры и YouTube перейдут на TCP, часто это стабильнее", quic, divider = dev) {
             quic = it
             st.blockQuic = it
         }
-        val strategies = listOf("AsIs", "IPIfNonMatch", "IPOnDemand")
-        PrefChoice(
-            icon = RayIcons.Route, tint = Purple, title = "Domain strategy",
-            subtitle = "Как сопоставлять домены с IP-правилами",
-            options = strategies, selected = strategies.indexOf(ds).coerceAtLeast(0), divider = false
-        ) {
-            ds = strategies[it]
-            st.domainStrategy = ds
+        if (dev) {
+            val strategies = listOf("AsIs", "IPIfNonMatch", "IPOnDemand")
+            PrefChoice(
+                icon = RayIcons.Route, tint = Purple, title = "Domain strategy",
+                subtitle = "Как сопоставлять домены с IP-правилами",
+                options = strategies, selected = strategies.indexOf(ds).coerceAtLeast(0), divider = false
+            ) {
+                ds = strategies[it]
+                st.domainStrategy = ds
+            }
         }
     }
 
-    Group("Sniffing", modifier = Modifier.appear(1)) {
-        PrefSwitch(RayIcons.Eye, Gray, "Определять домен", "По TLS SNI / HTTP Host / QUIC", sniff) {
-            sniff = it
-            st.sniffing = it
-        }
-        PrefSwitch(
-            null, Gray, "Только для маршрутизации",
-            "Не подменять адрес назначения: помогает, если не открываются отдельные сайты или игры",
-            routeOnly, enabled = sniff, divider = false
-        ) {
-            routeOnly = it
-            st.sniffRouteOnly = it
+    if (dev) {
+        Group("Sniffing", modifier = Modifier.appear(1), trailing = { DevTag() }) {
+            PrefSwitch(RayIcons.Eye, Gray, "Определять домен", "По TLS SNI / HTTP Host / QUIC", sniff) {
+                sniff = it
+                st.sniffing = it
+            }
+            PrefSwitch(
+                null, Gray, "Только для маршрутизации",
+                "Не подменять адрес назначения: помогает, если не открываются отдельные сайты или игры",
+                routeOnly, enabled = sniff, divider = false
+            ) {
+                routeOnly = it
+                st.sniffRouteOnly = it
+            }
         }
     }
 
@@ -471,6 +489,7 @@ private fun RoutingPrefs() {
 
 @Composable
 private fun DpiPrefs() {
+    val dev = look.dev
     var frag by remember { mutableStateOf(st.fragmentEnabled) }
     var packets by remember { mutableStateOf(st.fragmentPackets) }
     var length by remember { mutableStateOf(st.fragmentLength) }
@@ -495,7 +514,7 @@ private fun DpiPrefs() {
             icon = null, tint = Orange, title = "Пресет",
             options = presets.map { it.first },
             selected = presets.indexOfFirst { it.second == packets && it.third.first == length && it.third.second == interval },
-            enabled = frag
+            enabled = frag, divider = dev
         ) {
             val p = presets[it]
             packets = p.second
@@ -505,22 +524,24 @@ private fun DpiPrefs() {
             st.fragmentLength = length
             st.fragmentInterval = interval
         }
-        val packetOptions = listOf("tlshello", "1-1", "1-3", "1-5")
-        PrefChoice(
-            icon = null, tint = Orange, title = "Что дробить",
-            subtitle = "tlshello = только ClientHello; 1-3 = первые пакеты соединения",
-            options = packetOptions, selected = packetOptions.indexOf(packets), enabled = frag
-        ) {
-            packets = packetOptions[it]
-            st.fragmentPackets = packets
-        }
-        PrefText(icon = null, tint = Orange, title = "Размер куска, байт", value = length, placeholder = "100-200") {
-            length = it
-            st.fragmentLength = it.trim()
-        }
-        PrefText(icon = null, tint = Orange, title = "Пауза между кусками, мс", value = interval, placeholder = "10-20", divider = false) {
-            interval = it
-            st.fragmentInterval = it.trim()
+        if (dev) {
+            val packetOptions = listOf("tlshello", "1-1", "1-3", "1-5")
+            PrefChoice(
+                icon = null, tint = Orange, title = "Что дробить",
+                subtitle = "tlshello = только ClientHello; 1-3 = первые пакеты соединения",
+                options = packetOptions, selected = packetOptions.indexOf(packets), enabled = frag
+            ) {
+                packets = packetOptions[it]
+                st.fragmentPackets = packets
+            }
+            PrefText(icon = null, tint = Orange, title = "Размер куска, байт", value = length, placeholder = "100-200") {
+                length = it
+                st.fragmentLength = it.trim()
+            }
+            PrefText(icon = null, tint = Orange, title = "Пауза между кусками, мс", value = interval, placeholder = "10-20", divider = false) {
+                interval = it
+                st.fragmentInterval = it.trim()
+            }
         }
     }
 

@@ -14,7 +14,10 @@ import com.rayscope.app.core.CoreManager
 import com.rayscope.app.core.VpnState
 import com.rayscope.app.data.Actions
 import com.rayscope.app.data.Repo
+import com.rayscope.app.data.UiPrefs
 import com.rayscope.app.util.toast
+import com.rayscope.app.widget.SmallWidget
+import com.rayscope.app.widget.WideWidget
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -24,7 +27,9 @@ fun SettingsScreen(onOpen: (Route) -> Unit) {
     val ctx = LocalContext.current
     val vpn by VpnState.status.collectAsState()
     val subs by Repo.subs.collectAsState()
-    val theme by Repo.themeMode.collectAsState()
+    val ui by Repo.ui.collectAsState()
+    val dev = ui.dev
+    var taps by remember { mutableIntStateOf(0) }
     val scroll = rememberScrollState()
     val scrolled by remember { derivedStateOf { scroll.value > 120 } }
 
@@ -45,23 +50,35 @@ fun SettingsScreen(onOpen: (Route) -> Unit) {
         add("MTU ${st.mtu}")
     }
 
+    val accentName = if (ui.accent < 0) "Material You" else UiPrefs.ACCENT_NAMES.getOrElse(ui.accent) { "" }
+    val glassName = when (ui.glass) {
+        0 -> "стекло выкл"
+        2 -> "сильное стекло"
+        else -> "мягкое стекло"
+    }
+
     Page(title = "Настройки", scrolled = scrolled) {
         Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
             Spacer(Modifier.height(pageTop()))
             ScreenTitle(
                 "Настройки",
-                if (vpn.state == ConnState.CONNECTED) "Изменения туннеля применятся после переподключения" else "Подключение, пинг, маршруты"
+                if (vpn.state == ConnState.CONNECTED) "Изменения туннеля применятся после переподключения" else "Подключение, пинг, оформление"
             )
 
-            // ---- active profile summary
-            Column(Modifier.appear(0).fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).card(c, 22.dp).padding(16.dp)) {
-                CapsLabel("Активный профиль")
-                Spacer(Modifier.height(10.dp))
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    profile.forEachIndexed { i, t -> Tag(t, if (i < 3) c.accent else Color2.tag(t)) }
+            // ---- active profile summary (dev)
+            if (dev) {
+                Column(Modifier.appear(0).fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).card(c, 22.dp).padding(16.dp)) {
+                    Row {
+                        CapsLabel("Активный профиль", Modifier.weight(1f))
+                        DevTag()
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        profile.forEachIndexed { i, t -> Tag(t, if (i < 3) c.accent else Color2.tag(t)) }
+                    }
                 }
             }
 
@@ -71,14 +88,15 @@ fun SettingsScreen(onOpen: (Route) -> Unit) {
                     subtitle = listOf(
                         if (st.muxEnabled) "Mux ${st.muxConcurrency}" else "Mux выкл",
                         if (st.tcpFastOpen) "TFO" else null,
-                        "рукопожатие ${st.handshakeTimeout} с",
+                        if (dev) "рукопожатие ${st.handshakeTimeout} с" else null,
+                        if (st.autoFailover) "авто-переключение" else null,
                         if (st.reconnectOnNetworkChange) "переподключение при смене сети" else null
                     ).filterNotNull().joinToString(" · "),
                     chevron = true, onClick = { onOpen(Route.Pref(SetPage.CONNECTION)) }
                 )
                 PrefRow(
                     RayIcons.Activity, Good, "Пинг и проверка",
-                    subtitle = "${Actions.modeLabel()} · таймаут ${st.pingTimeout} ms · попыток ${st.pingAttempts}",
+                    subtitle = (if (dev) "${Actions.modeLabel()} · " else "") + "таймаут ${st.pingTimeout} ms · попыток ${st.pingAttempts}",
                     chevron = true, onClick = { onOpen(Route.Pref(SetPage.PING)) }
                 )
                 PrefRow(
@@ -92,21 +110,23 @@ fun SettingsScreen(onOpen: (Route) -> Unit) {
                         if (st.bypassLan) "LAN напрямую" else null,
                         if (st.ipv6) "IPv6" else null,
                         if (st.blockQuic) "QUIC блок" else null,
-                        st.domainStrategy
-                    ).filterNotNull().joinToString(" · "),
+                        if (dev) st.domainStrategy else null
+                    ).filterNotNull().joinToString(" · ").ifEmpty { "всё через VPN" },
                     chevron = true, onClick = { onOpen(Route.Pref(SetPage.ROUTING)) }
                 )
                 PrefRow(
                     RayIcons.Scissors, Orange, "Обход блокировок",
-                    subtitle = (if (st.fragmentEnabled) "Fragment ${st.fragmentPackets} · ${st.fragmentLength}" else "Fragment выкл") +
+                    subtitle = (if (st.fragmentEnabled) (if (dev) "Fragment ${st.fragmentPackets} · ${st.fragmentLength}" else "Fragment вкл") else "Fragment выкл") +
                         " · fp " + st.defaultFingerprint.ifEmpty { "из ссылки" },
-                    chevron = true, onClick = { onOpen(Route.Pref(SetPage.DPI)) }
+                    chevron = true, divider = dev, onClick = { onOpen(Route.Pref(SetPage.DPI)) }
                 )
-                PrefRow(
-                    RayIcons.Hash, Teal, "Локальный прокси",
-                    subtitle = "SOCKS ${st.socksPort} · HTTP ${st.httpPort}" + (if (st.allowLan) " · доступен в LAN" else ""),
-                    chevron = true, divider = false, onClick = { onOpen(Route.Pref(SetPage.PROXY)) }
-                )
+                if (dev) {
+                    PrefRow(
+                        RayIcons.Hash, Teal, "Локальный прокси",
+                        subtitle = "SOCKS ${st.socksPort} · HTTP ${st.httpPort}" + (if (st.allowLan) " · доступен в LAN" else ""),
+                        chevron = true, divider = false, onClick = { onOpen(Route.Pref(SetPage.PROXY)) }
+                    )
+                }
             }
 
             Group("Приложения и подписки", modifier = Modifier.appear(2)) {
@@ -128,20 +148,37 @@ fun SettingsScreen(onOpen: (Route) -> Unit) {
 
             Group("Оформление", modifier = Modifier.appear(3)) {
                 PrefRow(
-                    if (theme == 2 || (theme == 0 && c.dark)) RayIcons.Moon else RayIcons.Sun,
-                    Indigo, "Тема", divider = false
+                    if (ui.theme == 2 || (ui.theme == 0 && c.dark)) RayIcons.Moon else RayIcons.Sun,
+                    c.accent, "Оформление",
+                    subtitle = "$accentName · $glassName" + (if (ui.compact) " · компактно" else "") + (if (ui.amoled) " · AMOLED" else ""),
+                    chevron = true, onClick = { onOpen(Route.Pref(SetPage.LOOK)) }
                 )
                 Segmented(
                     listOf("Система", "Светлая", "Тёмная"),
-                    selected = theme,
-                    onSelect = { Repo.setTheme(it) },
-                    modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp)
+                    selected = ui.theme,
+                    onSelect = { v -> Repo.setUi { it.copy(theme = v) } },
+                    modifier = Modifier.padding(14.dp)
+                )
+            }
+
+            Group(
+                "Виджеты",
+                modifier = Modifier.appear(4),
+                footer = "Если лаунчер не умеет добавлять сам: долгое нажатие на рабочем столе → Виджеты → RayScope."
+            ) {
+                PrefRow(
+                    RayIcons.Power, Good, "Кнопка 2×2", subtitle = "Подключение одним нажатием",
+                    chevron = true, onClick = { pinWidget(ctx, SmallWidget::class.java) }
+                )
+                PrefRow(
+                    RayIcons.Signal, Cyan, "Панель 4×1", subtitle = "Сервер, статус, пинг и скорость",
+                    chevron = true, divider = false, onClick = { pinWidget(ctx, WideWidget::class.java) }
                 )
             }
 
             Group(
                 "Система",
-                modifier = Modifier.appear(4),
+                modifier = Modifier.appear(5),
                 footer = "Включите «Постоянная VPN» и «Блокировать без VPN», чтобы трафик не утекал при обрыве."
             ) {
                 PrefRow(RayIcons.Lock, Bad, "Always-on VPN и Kill switch", chevron = true, onClick = {
@@ -151,9 +188,36 @@ fun SettingsScreen(onOpen: (Route) -> Unit) {
                         toast("Не удалось открыть настройки VPN")
                     }
                 })
-                PrefRow(RayIcons.Logs, Gray, "Журнал событий", chevron = true, onClick = { onOpen(Route.Logs) })
-                PrefRow(RayIcons.Code, Teal, "Ядро", value = CoreManager.version())
-                PrefRow(RayIcons.Info, Blue, "Версия", value = BuildConfig.VERSION_NAME, divider = false)
+                if (dev) {
+                    PrefRow(RayIcons.Logs, Gray, "Журнал событий", chevron = true, onClick = { onOpen(Route.Logs) })
+                    PrefRow(RayIcons.Code, Teal, "Ядро", value = CoreManager.version())
+                }
+                PrefRow(
+                    RayIcons.Info, Blue, "Версия", value = BuildConfig.VERSION_NAME, divider = dev,
+                    onClick = {
+                        if (dev) {
+                            toast("Режим разработчика уже включён")
+                        } else {
+                            taps += 1
+                            val left = 7 - taps
+                            if (left <= 0) {
+                                taps = 0
+                                Repo.setUi { it.copy(dev = true) }
+                                toast("Режим разработчика включён")
+                            } else if (left <= 3) {
+                                toast("Ещё $left до режима разработчика")
+                            }
+                        }
+                    }
+                )
+                if (dev) {
+                    PrefRow(
+                        RayIcons.Code, Purple, "Режим разработчика",
+                        subtitle = "Журнал, история проверок, JSON, инструменты",
+                        chevron = true, divider = false, onClick = { onOpen(Route.Pref(SetPage.DEV)) },
+                        trailing = { DevTag() }
+                    )
+                }
             }
             TabBottomSpacer()
         }
