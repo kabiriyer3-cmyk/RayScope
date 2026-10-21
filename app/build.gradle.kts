@@ -1,3 +1,5 @@
+import java.io.File
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -6,7 +8,8 @@ plugins {
 
 val ciVersionCode: Int = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 1
 val ciVersionName: String = System.getenv("VERSION_NAME") ?: "1.0.0"
-val releaseKeystore: java.io.File? = System.getenv("KEYSTORE_FILE")?.let { java.io.File(it) }?.takeIf { it.exists() }
+val keystorePath: String? = System.getenv("KEYSTORE_FILE")
+val releaseKeystore: File? = if (keystorePath != null && File(keystorePath).exists()) File(keystorePath) else null
 
 android {
     namespace = "com.rayscope.app"
