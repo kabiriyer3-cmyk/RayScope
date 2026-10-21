@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -225,7 +226,7 @@ fun ServersScreen() {
 }
 
 @Composable
-private fun MenuItem(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector, dev: Boolean = false, onClick: () -> Unit) {
+private fun MenuItem(text: String, icon: ImageVector, dev: Boolean = false, onClick: () -> Unit) {
     val p = pal
     DropdownMenuItem(
         text = {
@@ -337,7 +338,7 @@ private fun ServerRow(
         ) {
             if (testingOne) {
                 val r = spin()
-                Icon(Ico.Refresh, contentDescription = null, tint = p.hint, modifier = Modifier.size(16.dp).graphicsLayerRotation(r))
+                Icon(Ico.Refresh, contentDescription = null, tint = p.hint, modifier = Modifier.size(16.dp).spinning(r))
             } else {
                 LatencyText(s.delay, if (compact) 14.sp else 16.sp)
             }
@@ -350,9 +351,6 @@ private fun ServerRow(
         )
     }
 }
-
-private fun Modifier.graphicsLayerRotation(r: State<Float>): Modifier =
-    this.then(androidx.compose.ui.graphics.graphicsLayer { rotationZ = r.value })
 
 @Composable
 private fun SubCard(sub: Subscription, count: Int, updating: Boolean) {
