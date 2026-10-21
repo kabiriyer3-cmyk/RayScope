@@ -84,7 +84,8 @@ fun CheckScreen() {
         if (IpCheck.state.value.checkedAt == 0L) Actions.go { IpCheck.run() }
     }
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 32.dp, vertical = 28.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(start = 32.dp, end = 32.dp, top = 28.dp, bottom = TAB_SPACE),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Header("Проверка", "Виден ли настоящий IP и открываются ли сервисы") {
@@ -165,7 +166,7 @@ private fun RouteNode(label: String, code: String) {
 
 @Composable
 private fun RouteLink(c: Color) {
-    Box(Modifier.padding(horizontal = 6.dp, vertical = 0.dp).padding(bottom = 16.dp).width(30.dp).height(2.dp).clip(RoundedCornerShape(1.dp)).background(c.copy(alpha = 0.7f)))
+    Box(Modifier.padding(horizontal = 6.dp).padding(bottom = 16.dp).width(30.dp).height(2.dp).clip(RoundedCornerShape(1.dp)).background(c.copy(alpha = 0.7f)))
 }
 
 @Composable
@@ -263,7 +264,22 @@ private fun History(cs: CheckState) {
         } else {
             cs.history.forEachIndexed { i, line ->
                 if (i > 0) Line()
-                Text(line, color = p.text, fontSize = 13.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp))
+                // the log line starts with a check or a cross: draw our own icons instead of font glyphs
+                val ok = line.startsWith("✓")
+                val bad = line.startsWith("✕")
+                val parts = line.removePrefix("✓").removePrefix("✕").trim().split("→")
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (ok || bad) {
+                        Icon(if (ok) Ico.Check else Ico.Close, contentDescription = null, tint = if (ok) Good else Bad, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    parts.forEachIndexed { j, part ->
+                        if (j > 0) {
+                            Icon(Ico.Arrow, contentDescription = null, tint = p.hint, modifier = Modifier.padding(horizontal = 6.dp).size(12.dp))
+                        }
+                        Text(part.trim(), color = p.text, fontSize = 13.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
             }
         }
     }
@@ -324,7 +340,7 @@ private fun Swatch(c: Color, name: String, selected: Boolean, onClick: () -> Uni
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(onOpenLog: () -> Unit) {
     val p = pal
     val prefs by Store.prefs.collectAsState()
     val st by Engine.status.collectAsState()
@@ -345,7 +361,7 @@ fun SettingsScreen() {
 
     Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
         Column(
-            Modifier.widthIn(max = 860.dp).fillMaxWidth().padding(horizontal = 32.dp, vertical = 28.dp),
+            Modifier.widthIn(max = 860.dp).fillMaxWidth().padding(start = 32.dp, end = 32.dp, top = 28.dp, bottom = TAB_SPACE),
             verticalArrangement = Arrangement.spacedBy(22.dp)
         ) {
             Header("Настройки", "Подключение, пинг, маршруты и внешний вид")
@@ -363,6 +379,35 @@ fun SettingsScreen() {
                         dirty = false
                     }, primary = true)
                 }
+            }
+
+            Section("Оформление") {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    Text("Тема", color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(8.dp))
+                    Segmented(listOf("Как в системе", "Светлая", "Тёмная"), prefs.theme.coerceIn(0, 2), { i -> Store.setPrefs { it.copy(theme = i) } })
+                }
+                Line()
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    Text("Акцент", color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(8.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ACCENT_NAMES.forEachIndexed { i, n ->
+                            Swatch(accentColor(i, p.dark), n, prefs.accent == i) { Store.setPrefs { it.copy(accent = i) } }
+                        }
+                    }
+                }
+                Line()
+                ChoiceRow(
+                    "Liquid Glass", listOf("Выкл", "Мягкое", "Сильное"), prefs.glass.coerceIn(0, 2),
+                    "Стекло нижней панели и кнопки подключения: мягкое с размытием, сильное прозрачнее и с линзой"
+                ) { i -> Store.setPrefs { it.copy(glass = i) } }
+                Line()
+                SwitchRow("Подписи вкладок", "Название активной вкладки в нижней панели", prefs.tabLabels) { v ->
+                    Store.setPrefs { it.copy(tabLabels = v) }
+                }
+                Line()
+                SwitchRow("Компактный список серверов", "Больше серверов на экране", prefs.compact) { v -> Store.setPrefs { it.copy(compact = v) } }
             }
 
             Section("Подключение") {
@@ -539,26 +584,6 @@ fun SettingsScreen() {
                 }
             }
 
-            Section("Оформление") {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    Text("Тема", color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Spacer(Modifier.height(8.dp))
-                    Segmented(listOf("Как в системе", "Светлая", "Тёмная"), prefs.theme.coerceIn(0, 2), { i -> Store.setPrefs { it.copy(theme = i) } })
-                }
-                Line()
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    Text("Акцент", color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Spacer(Modifier.height(8.dp))
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        ACCENT_NAMES.forEachIndexed { i, n ->
-                            Swatch(accentColor(i, p.dark), n, prefs.accent == i) { Store.setPrefs { it.copy(accent = i) } }
-                        }
-                    }
-                }
-                Line()
-                SwitchRow("Компактный список серверов", "Больше серверов на экране", prefs.compact) { v -> Store.setPrefs { it.copy(compact = v) } }
-            }
-
             Section("Приложение") {
                 SwitchRow("Подключаться при запуске", "К последнему выбранному серверу", prefs.connectOnLaunch) { v ->
                     Store.setPrefs { it.copy(connectOnLaunch = v) }
@@ -597,6 +622,12 @@ fun SettingsScreen() {
                 }
                 if (prefs.dev) {
                     Line()
+                    SettingRow("Журнал", "Ядро и события программы", onClick = onOpenLog) {
+                        DevTag()
+                        Spacer(Modifier.width(8.dp))
+                        Icon(Ico.Chevron, contentDescription = null, tint = p.hint, modifier = Modifier.size(18.dp))
+                    }
+                    Line()
                     SwitchRow("Режим разработчика", "Журнал, TCP-пинг, сырые параметры серверов", true) { v ->
                         Store.setPrefs { it.copy(dev = v) }
                     }
@@ -609,15 +640,17 @@ fun SettingsScreen() {
 // ------------------------------------------------------------------ log
 
 @Composable
-fun LogScreen() {
+fun LogScreen(onBack: () -> Unit) {
     val p = pal
     val lines by Log.lines.collectAsState()
     val list = rememberLazyListState()
     LaunchedEffect(lines.size) {
         if (lines.isNotEmpty()) list.scrollToItem(lines.size - 1)
     }
-    Column(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 28.dp)) {
+    Column(Modifier.fillMaxSize().padding(start = 32.dp, end = 32.dp, top = 28.dp, bottom = 96.dp)) {
         Header("Журнал", "Строк: " + lines.size + " · ядро и события программы") {
+            Btn("Назад", onBack, icon = Ico.Back, color = p.hint)
+            Spacer(Modifier.width(8.dp))
             Btn("Скопировать", {
                 Clip.copy(lines.joinToString(System.lineSeparator()))
                 Notice.show("Журнал скопирован")

@@ -18,11 +18,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -52,6 +55,9 @@ fun pickServer(id: String) {
     if (Engine.status.value.state == ConnState.STOPPED) Store.select(id) else connectTo(id)
 }
 
+/** Space at the bottom of every page so the floating tab bar never covers content. */
+val TAB_SPACE = 110.dp
+
 @Composable
 fun HomeScreen(onGoServers: () -> Unit, onGoCheck: () -> Unit) {
     val st by Engine.status.collectAsState()
@@ -63,7 +69,10 @@ fun HomeScreen(onGoServers: () -> Unit, onGoCheck: () -> Unit) {
     val sel = remember(servers, selId) { Store.selected() }
     val connected = st.state == ConnState.CONNECTED
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 32.dp, vertical = 28.dp)) {
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(start = 32.dp, end = 32.dp, top = 28.dp, bottom = TAB_SPACE)
+    ) {
         Header("Главная", if (connected) "Трафик идёт через " + st.serverName else "Готов к подключению") {
             StatusPill(st.state)
         }
@@ -146,6 +155,11 @@ private fun ConnectCard(st: Status, prefs: Prefs) {
     }
 }
 
+/**
+ * The scope: 72 ticks with a comet while connecting and a radar sweep in session.
+ * The power button in the middle is a Liquid Glass lens over its own little backdrop
+ * (glow, reticle, sweep), so the reticle visibly bends at the edge of the glass.
+ */
 @Composable
 private fun Dial(state: ConnState, onClick: () -> Unit) {
     val p = pal
@@ -159,41 +173,74 @@ private fun Dial(state: ConnState, onClick: () -> Unit) {
     val col by animateColorAsState(target, tween(400))
     val angle: State<Float>? = if (connected || busy) spin(if (busy) 1300 else 5000) else null
     val idleTick = p.faint
-    Box(
-        Modifier.size(240.dp).clip(CircleShape).clickable(onClick = onClick).hand(),
-        contentAlignment = Alignment.Center
-    ) {
-        Canvas(Modifier.fillMaxSize()) {
-            val a = angle?.value ?: 0f
-            val r = size.minDimension / 2f
-            val cx = size.width / 2f
-            val cy = size.height / 2f
-            val sw = 2.dp.toPx()
-            val span = if (busy) 70f else 140f
-            for (i in 0 until 72) {
-                val deg = i * 5f
-                val rad = Math.toRadians((deg - 90f).toDouble())
-                val long = i % 6 == 0
-                val r1 = r - (if (long) 16.dp.toPx() else 10.dp.toPx())
-                val r2 = r - 3.dp.toPx()
-                val tick = if (angle == null) {
-                    idleTick
-                } else {
-                    val diff = ((a - deg) % 360f + 360f) % 360f
-                    if (diff < span) col.copy(alpha = 1f - diff / span * 0.8f) else idleTick
+    val local = remember { Backdrop() }
+    Box(Modifier.size(240.dp), contentAlignment = Alignment.Center) {
+        BackdropSource(local, Modifier.fillMaxSize(), background = p.surface) {
+            Canvas(Modifier.fillMaxSize()) {
+                val a = angle?.value ?: 0f
+                val r = size.minDimension / 2f
+                val cx = size.width / 2f
+                val cy = size.height / 2f
+                val c = Offset(cx, cy)
+                val sw = 2.dp.toPx()
+                val span = if (busy) 70f else 140f
+                for (i in 0 until 72) {
+                    val deg = i * 5f
+                    val rad = Math.toRadians((deg - 90f).toDouble())
+                    val long = i % 6 == 0
+                    val r1 = r - (if (long) 16.dp.toPx() else 10.dp.toPx())
+                    val r2 = r - 3.dp.toPx()
+                    val tick = if (angle == null) {
+                        idleTick
+                    } else {
+                        val diff = ((a - deg) % 360f + 360f) % 360f
+                        if (diff < span) col.copy(alpha = 1f - diff / span * 0.8f) else idleTick
+                    }
+                    val ca = cos(rad).toFloat()
+                    val sa = sin(rad).toFloat()
+                    drawLine(
+                        tick, Offset(cx + ca * r1, cy + sa * r1), Offset(cx + ca * r2, cy + sa * r2),
+                        strokeWidth = sw, cap = StrokeCap.Round
+                    )
                 }
-                val c = cos(rad).toFloat()
-                val s = sin(rad).toFloat()
-                drawLine(
-                    tick, Offset(cx + c * r1, cy + s * r1), Offset(cx + c * r2, cy + s * r2),
-                    strokeWidth = sw, cap = StrokeCap.Round
+                val inner = r * 0.64f
+                drawCircle(
+                    Brush.radialGradient(
+                        listOf(col.copy(alpha = 0.32f), col.copy(alpha = 0.10f), Color.Transparent),
+                        center = c, radius = inner
+                    ),
+                    radius = inner, center = c
                 )
+                drawCircle(col.copy(alpha = 0.45f), radius = inner, center = c, style = Stroke(width = 1.5.dp.toPx()))
+                if (connected && angle != null) {
+                    rotate(a - 90f, c) {
+                        drawArc(
+                            Brush.sweepGradient(0.78f to Color.Transparent, 1f to col.copy(alpha = 0.38f), center = c),
+                            startAngle = -80f, sweepAngle = 80f, useCenter = true,
+                            topLeft = Offset(cx - inner, cy - inner), size = Size(inner * 2f, inner * 2f)
+                        )
+                    }
+                }
+                // reticle under the glass
+                val ret = col.copy(alpha = 0.4f)
+                val thin = 1.dp.toPx()
+                drawCircle(ret, radius = r * 0.43f, center = c, style = Stroke(width = thin))
+                drawCircle(ret, radius = r * 0.27f, center = c, style = Stroke(width = thin))
+                val l1 = r * 0.1f
+                val l2 = r * 0.6f
+                drawLine(ret, Offset(cx - l2, cy), Offset(cx - l1, cy), strokeWidth = thin)
+                drawLine(ret, Offset(cx + l1, cy), Offset(cx + l2, cy), strokeWidth = thin)
+                drawLine(ret, Offset(cx, cy - l2), Offset(cx, cy - l1), strokeWidth = thin)
+                drawLine(ret, Offset(cx, cy + l1), Offset(cx, cy + l2), strokeWidth = thin)
             }
-            val inner = r * 0.64f
-            drawCircle(col.copy(alpha = 0.10f), radius = inner, center = Offset(cx, cy))
-            drawCircle(col.copy(alpha = 0.45f), radius = inner, center = Offset(cx, cy), style = Stroke(width = 1.5.dp.toPx()))
         }
-        Icon(Ico.Power, contentDescription = "Подключить", tint = col, modifier = Modifier.size(54.dp))
+        GlassSurface(
+            60.dp, Modifier.size(120.dp), backdrop = local,
+            tint = if (p.glass == 0) p.raised else p.glassFill.copy(alpha = 0.22f),
+            onClick = onClick
+        ) {
+            Icon(Ico.Power, contentDescription = if (connected || busy) "Отключить" else "Подключить", tint = col, modifier = Modifier.size(46.dp))
+        }
     }
 }
 
@@ -460,7 +507,7 @@ private fun DevConnection(st: Status, sel: Server?) {
         KV("Состояние", st.state.name, mono = true)
         KV("Сервер", sel?.let { it.address + ":" + it.port } ?: "", mono = true)
         KV("С момента", if (st.since > 0) Fmt.date(st.since) else "")
-        KV("Всего ↓ / ↑", Fmt.bytes(st.totalDown) + " / " + Fmt.bytes(st.totalUp))
+        KV("Загружено / отдано", Fmt.bytes(st.totalDown) + " / " + Fmt.bytes(st.totalUp))
         KV("Системный прокси", if (SystemProxy.active) "127.0.0.1:" + SystemProxy.port else "выкл", mono = true)
         KV("Файл ядра", Paths.xray()?.absolutePath ?: "не найдено", mono = true)
         KV("Данные", Paths.data.absolutePath, mono = true)

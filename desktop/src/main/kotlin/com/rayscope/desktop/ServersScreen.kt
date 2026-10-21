@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -29,7 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 val SORT_NAMES = listOf("Как в подписке", "По пингу", "По имени", "По стабильности")
-private val FILTERS = listOf("Все", "Рабочие", "Нерабочие", "Не проверены", "★ Избранные")
+private val FILTERS = listOf("Все", "Рабочие", "Нерабочие", "Не проверены", "Избранные")
 
 fun mask(v: String): String = if (v.length <= 12) v else v.take(6) + "…" + v.takeLast(4)
 
@@ -100,25 +101,25 @@ fun ServersScreen() {
                 Box {
                     IconBtn(Ico.More, "Ещё", { menu = true })
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        MenuItem("Обновить подписки") {
+                        MenuItem("Обновить подписки", Ico.Refresh) {
                             menu = false
                             Actions.go { Actions.updateAllSubs(silent = false) }
                         }
-                        MenuItem("Скопировать все ссылки") {
+                        MenuItem("Скопировать все ссылки", Ico.Copy) {
                             menu = false
                             Clip.copy(Actions.exportAll())
                             Notice.show("Ссылки скопированы")
                         }
-                        MenuItem("Удалить нерабочие") {
+                        MenuItem("Удалить нерабочие", Ico.Trash) {
                             menu = false
                             confirmDead = true
                         }
                         if (prefs.dev) {
-                            MenuItem("TCP-пинг всех", dev = true) {
+                            MenuItem("TCP-пинг всех", Ico.Activity, dev = true) {
                                 menu = false
                                 Actions.go { Actions.tcpAll() }
                             }
-                            MenuItem("Сбросить результаты", dev = true) {
+                            MenuItem("Сбросить результаты", Ico.Close, dev = true) {
                                 menu = false
                                 Store.resetTests()
                             }
@@ -157,7 +158,7 @@ fun ServersScreen() {
                         Btn(SORT_NAMES[sortMode], { sortMenu = true }, icon = Ico.Sort, color = p.hint)
                         DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
                             SORT_NAMES.forEachIndexed { i, n ->
-                                MenuItem(if (i == sortMode) "✓ " + n else n) {
+                                CheckItem(n, i == sortMode) {
                                     sortMenu = false
                                     Store.setPrefs { it.copy(sortMode = i) }
                                 }
@@ -169,14 +170,16 @@ fun ServersScreen() {
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    FILTERS.forEachIndexed { i, f -> RChip(f, filter == i, counts[i]) { filter = i } }
+                    FILTERS.forEachIndexed { i, f ->
+                        RChip(f, filter == i, counts[i], icon = if (i == 4) Ico.StarFilled else null) { filter = i }
+                    }
                 }
                 if (shown.isEmpty()) {
                     Text("Ничего не найдено", color = p.hint, fontSize = 14.sp, modifier = Modifier.padding(top = 30.dp).fillMaxWidth(), textAlign = TextAlign.Center)
                 } else {
                     LazyColumn(
                         Modifier.weight(1f).fillMaxWidth(),
-                        contentPadding = PaddingValues(bottom = 24.dp),
+                        contentPadding = PaddingValues(bottom = TAB_SPACE),
                         verticalArrangement = Arrangement.spacedBy(if (prefs.compact) 4.dp else 8.dp)
                     ) {
                         items(shown, key = { it.id }) { s ->
@@ -223,7 +226,8 @@ fun ServersScreen() {
 }
 
 @Composable
-private fun MenuItem(text: String, dev: Boolean = false, onClick: () -> Unit) {
+private fun MenuItem(text: String, icon: ImageVector, dev: Boolean = false, onClick: () -> Unit) {
+    val p = pal
     DropdownMenuItem(
         text = {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -234,7 +238,22 @@ private fun MenuItem(text: String, dev: Boolean = false, onClick: () -> Unit) {
                 }
             }
         },
-        onClick = onClick
+        onClick = onClick,
+        leadingIcon = { Icon(icon, contentDescription = null, tint = p.hint, modifier = Modifier.size(16.dp)) }
+    )
+}
+
+@Composable
+private fun CheckItem(text: String, checked: Boolean, onClick: () -> Unit) {
+    val p = pal
+    DropdownMenuItem(
+        text = { Text(text, fontSize = 14.sp, fontWeight = if (checked) FontWeight.SemiBold else FontWeight.Normal) },
+        onClick = onClick,
+        leadingIcon = {
+            Box(Modifier.size(16.dp)) {
+                if (checked) Icon(Ico.Check, contentDescription = null, tint = p.accent, modifier = Modifier.size(16.dp))
+            }
+        }
     )
 }
 
@@ -317,7 +336,12 @@ private fun ServerRow(
                 }.hand().padding(4.dp),
             contentAlignment = Alignment.CenterEnd
         ) {
-            if (testingOne) Text("…", color = p.hint, fontSize = 16.sp) else LatencyText(s.delay, if (compact) 14.sp else 16.sp)
+            if (testingOne) {
+                val r = spin()
+                Icon(Ico.Refresh, contentDescription = null, tint = p.hint, modifier = Modifier.size(16.dp).spinning(r))
+            } else {
+                LatencyText(s.delay, if (compact) 14.sp else 16.sp)
+            }
         }
         Spacer(Modifier.width(6.dp))
         IconBtn(
@@ -428,7 +452,8 @@ private fun DetailPanel(s: Server, subs: List<Subscription>, dev: Boolean, st: S
     var testing by remember(s.id) { mutableStateOf(false) }
     val live = st.serverId == s.id && st.state != ConnState.STOPPED
     Column(
-        Modifier.width(360.dp).fillMaxHeight().background(p.side).verticalScroll(rememberScrollState()).padding(20.dp),
+        Modifier.width(360.dp).fillMaxHeight().background(p.side).verticalScroll(rememberScrollState())
+            .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = TAB_SPACE),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

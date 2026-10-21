@@ -41,6 +41,10 @@ data class Prefs(
     /** 0 system, 1 light, 2 dark */
     val theme: Int = 2,
     val accent: Int = 0,
+    /** Liquid Glass: 0 off, 1 soft, 2 strong */
+    val glass: Int = 1,
+    /** label of the active tab in the floating tab bar */
+    val tabLabels: Boolean = true,
     val compact: Boolean = false,
     val connectOnLaunch: Boolean = false,
     val closeToTray: Boolean = true,
@@ -87,6 +91,8 @@ data class Prefs(
         .put("autoUpdateSubs", autoUpdateSubs)
         .put("theme", theme)
         .put("accent", accent)
+        .put("glass", glass)
+        .put("tabLabels", tabLabels)
         .put("compact", compact)
         .put("connectOnLaunch", connectOnLaunch)
         .put("closeToTray", closeToTray)
@@ -136,6 +142,8 @@ data class Prefs(
                 autoUpdateSubs = o.optBoolean("autoUpdateSubs", d.autoUpdateSubs),
                 theme = o.optInt("theme", d.theme),
                 accent = o.optInt("accent", d.accent),
+                glass = o.optInt("glass", d.glass).coerceIn(0, 2),
+                tabLabels = o.optBoolean("tabLabels", d.tabLabels),
                 compact = o.optBoolean("compact", d.compact),
                 connectOnLaunch = o.optBoolean("connectOnLaunch", d.connectOnLaunch),
                 closeToTray = o.optBoolean("closeToTray", d.closeToTray),

@@ -8,6 +8,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -37,6 +38,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
@@ -57,7 +60,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 // ------------------------------------------------------------------ palette (same "Scope" look as Android)
 
@@ -91,6 +97,11 @@ data class Pal(
     val faint: Color,
     val accent: Color,
     val onAccent: Color,
+    /** Liquid Glass level: 0 off, 1 soft, 2 strong */
+    val glass: Int = 1,
+    val glassFill: Color = Color.Unspecified,
+    val glassFallback: Color = Color.Unspecified,
+    val rim: Color = Color.Unspecified,
 )
 
 val ACCENT_NAMES = listOf("Циан", "Мята", "Лайм", "Синий", "Фиалка", "Розовый", "Янтарь", "Коралл")
@@ -108,20 +119,24 @@ fun accentColor(i: Int, dark: Boolean): Color {
     return l.getOrElse(i) { l[0] }
 }
 
-fun palette(dark: Boolean, accentIndex: Int): Pal {
+fun palette(dark: Boolean, accentIndex: Int, glass: Int = 1): Pal {
     val a = accentColor(accentIndex, dark)
     val on = if (a.luminance() > 0.45f) InkOn else Color.White
     return if (dark) {
         Pal(
             dark = true, bg = Color(0xFF0A0C10), side = Color(0xFF0E1015), surface = Color(0xFF13161C),
             raised = Color(0xFF1C2028), stroke = Color.White.copy(alpha = 0.07f), text = Color(0xFFF1F3F7),
-            hint = Color(0xFF8A93A2), faint = Color.White.copy(alpha = 0.10f), accent = a, onAccent = on
+            hint = Color(0xFF8A93A2), faint = Color.White.copy(alpha = 0.10f), accent = a, onAccent = on,
+            glass = glass.coerceIn(0, 2), glassFill = Color(0xFF14171D).copy(alpha = 0.58f),
+            glassFallback = Color(0xF2171A21), rim = Color.White.copy(alpha = 0.42f)
         )
     } else {
         Pal(
             dark = false, bg = Color(0xFFF3F4F6), side = Color(0xFFEBEDF1), surface = Color.White,
             raised = Color(0xFFEDEFF3), stroke = Color.Black.copy(alpha = 0.08f), text = Color(0xFF0E1116),
-            hint = Color(0xFF667080), faint = Color.Black.copy(alpha = 0.08f), accent = a, onAccent = on
+            hint = Color(0xFF667080), faint = Color.Black.copy(alpha = 0.08f), accent = a, onAccent = on,
+            glass = glass.coerceIn(0, 2), glassFill = Color.White.copy(alpha = 0.66f),
+            glassFallback = Color(0xF5FFFFFF), rim = Color.White
         )
     }
 }
@@ -132,13 +147,13 @@ val pal: Pal
     @Composable get() = LocalPal.current
 
 @Composable
-fun RayTheme(theme: Int, accent: Int, content: @Composable () -> Unit) {
+fun RayTheme(theme: Int, accent: Int, glass: Int = 1, content: @Composable () -> Unit) {
     val dark = when (theme) {
         1 -> false
         2 -> true
         else -> isSystemInDarkTheme()
     }
-    val p = palette(dark, accent)
+    val p = palette(dark, accent, glass)
     val scheme = if (dark) {
         darkColorScheme(
             primary = p.accent, onPrimary = p.onAccent, secondary = p.accent,
@@ -192,19 +207,65 @@ private fun PathBuilder.rect(x: Float, y: Float, w: Float, h: Float) {
     close()
 }
 
+private fun PathBuilder.roundRect(x: Float, y: Float, w: Float, h: Float, r: Float) {
+    moveTo(x + r, y)
+    lineTo(x + w - r, y)
+    arcTo(r, r, 0f, false, true, x + w, y + r)
+    lineTo(x + w, y + h - r)
+    arcTo(r, r, 0f, false, true, x + w - r, y + h)
+    lineTo(x + r, y + h)
+    arcTo(r, r, 0f, false, true, x, y + h - r)
+    lineTo(x, y + r)
+    arcTo(r, r, 0f, false, true, x + r, y)
+    close()
+}
+
+private fun appIcon(): ImageVector {
+    val cyan = Color(0xFF38E1FF)
+    val b = ImageVector.Builder(name = "app", defaultWidth = 32.dp, defaultHeight = 32.dp, viewportWidth = 32f, viewportHeight = 32f)
+    b.path(fill = Brush.verticalGradient(listOf(Color(0xFF2A303A), Color(0xFF0A0D12)), startY = 1f, endY = 31f)) {
+        roundRect(1f, 1f, 30f, 30f, 7.5f)
+    }
+    b.path(fill = Brush.radialGradient(listOf(cyan.copy(alpha = 0.40f), cyan.copy(alpha = 0f)), center = Offset(16f, 16f), radius = 11f)) {
+        circle(16f, 16f, 11f)
+    }
+    for (i in 0 until 24) {
+        val a = (i * 15.0 - 90.0) * PI / 180.0
+        val long = i % 6 == 0
+        val r2 = 12.8f
+        val r1 = if (long) 10.3f else 11.3f
+        val k = (1f - i / 17f).coerceAtLeast(0f)
+        val ca = cos(a).toFloat()
+        val sa = sin(a).toFloat()
+        b.path(
+            stroke = SolidColor(cyan.copy(alpha = 0.28f + 0.72f * k)),
+            strokeLineWidth = if (long) 1.4f else 0.9f,
+            strokeLineCap = StrokeCap.Round
+        ) {
+            moveTo(16f + ca * r1, 16f + sa * r1)
+            lineTo(16f + ca * r2, 16f + sa * r2)
+        }
+    }
+    b.path(fill = SolidColor(cyan.copy(alpha = 0.14f)), stroke = SolidColor(cyan.copy(alpha = 0.6f)), strokeLineWidth = 0.6f) {
+        circle(16f, 16f, 7f)
+    }
+    b.path(stroke = SolidColor(cyan), strokeLineWidth = 1.9f, strokeLineCap = StrokeCap.Round) {
+        moveTo(16f, 11.3f)
+        lineTo(16f, 15.6f)
+    }
+    b.path(stroke = SolidColor(cyan), strokeLineWidth = 1.9f, strokeLineCap = StrokeCap.Round) {
+        moveTo(18.97f, 13.53f)
+        arcTo(4.2f, 4.2f, 0f, true, true, 13.03f, 13.53f)
+    }
+    b.path(stroke = SolidColor(Color.White.copy(alpha = 0.22f)), strokeLineWidth = 0.6f) {
+        roundRect(1.3f, 1.3f, 29.4f, 29.4f, 7.2f)
+    }
+    return b.build()
+}
+
 object Ico {
-    val App: ImageVector = ImageVector.Builder(name = "app", defaultWidth = 32.dp, defaultHeight = 32.dp, viewportWidth = 32f, viewportHeight = 32f).apply {
-        path(fill = SolidColor(Color(0xFF0E1218))) { circle(16f, 16f, 15.5f) }
-        path(fill = null, stroke = SolidColor(Color(0xFF38E1FF)), strokeLineWidth = 1.2f) { circle(16f, 16f, 14.6f) }
-        path(fill = null, stroke = SolidColor(Color(0xFF38E1FF)), strokeLineWidth = 2.6f, strokeLineCap = StrokeCap.Round) {
-            moveTo(16f, 8f)
-            lineTo(16f, 15.5f)
-        }
-        path(fill = null, stroke = SolidColor(Color(0xFF38E1FF)), strokeLineWidth = 2.6f, strokeLineCap = StrokeCap.Round) {
-            moveTo(21.66f, 10.34f)
-            arcTo(8f, 8f, 0f, true, true, 10.34f, 10.34f)
-        }
-    }.build()
+    /** Same artwork as RayScope.exe: dark squircle, scope ring, power glyph. */
+    val App: ImageVector = appIcon()
 
     val Power = icon("power") {
         line { moveTo(12f, 2.5f); lineTo(12f, 11.5f) }
@@ -266,6 +327,9 @@ object Ico {
     }
     val Chevron = icon("chevron") {
         line { moveTo(9f, 6f); lineTo(15f, 12f); lineTo(9f, 18f) }
+    }
+    val Back = icon("back") {
+        line { moveTo(15f, 6f); lineTo(9f, 12f); lineTo(15f, 18f) }
     }
     val Search = icon("search") {
         line { circle(11f, 11f, 7f) }
@@ -334,6 +398,10 @@ object Ico {
         line { moveTo(10f, 14f); lineTo(14f, 10f) }
         line { moveTo(8.5f, 11.5f); lineTo(6.5f, 13.5f); arcTo(3.5f, 3.5f, 0f, false, false, 11.5f, 18.5f); lineTo(13.5f, 16.5f) }
         line { moveTo(15.5f, 12.5f); lineTo(17.5f, 10.5f); arcTo(3.5f, 3.5f, 0f, false, false, 12.5f, 5.5f); lineTo(10.5f, 7.5f) }
+    }
+    val Arrow = icon("arrow") {
+        line { moveTo(4f, 12f); lineTo(20f, 12f) }
+        line { moveTo(14f, 6f); lineTo(20f, 12f); lineTo(14f, 18f) }
     }
 }
 
@@ -405,7 +473,7 @@ fun Header(title: String, subtitle: String? = null, trailing: @Composable RowSco
     val p = pal
     Row(Modifier.fillMaxWidth().padding(bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(title, color = p.text, fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.6).sp, maxLines = 1)
+            Text(title, color = p.text, fontSize = 30.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.7).sp, maxLines = 1)
             if (subtitle != null) {
                 Text(subtitle, color = p.hint, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -517,7 +585,7 @@ fun IconBtn(icon: ImageVector, desc: String, onClick: () -> Unit, tint: Color = 
 }
 
 @Composable
-fun RChip(text: String, selected: Boolean, count: Int? = null, onClick: () -> Unit) {
+fun RChip(text: String, selected: Boolean, count: Int? = null, icon: ImageVector? = null, onClick: () -> Unit) {
     val p = pal
     val bg by animateColorAsState(if (selected) p.accent else p.raised, tween(180))
     val fg by animateColorAsState(if (selected) p.onAccent else p.text, tween(180))
@@ -527,6 +595,10 @@ fun RChip(text: String, selected: Boolean, count: Int? = null, onClick: () -> Un
             .clickable(onClick = onClick).hand().padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (icon != null) {
+            Icon(icon, contentDescription = null, tint = if (selected) fg else Yellow, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(6.dp))
+        }
         Text(text, color = fg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
         if (count != null) {
             Spacer(Modifier.width(6.dp))
@@ -700,18 +772,34 @@ fun FieldRow(title: String, value: String, placeholder: String, subtitle: String
     }
 }
 
-// ------------------------------------------------------------------ latency display
+// ------------------------------------------------------------------ flags and latency display
 
+/** Country flag drawn in code (see Flags.kt); unknown codes fall back to letters, empty to a globe. */
 @Composable
 fun FlagBox(code: String, size: Dp = 40.dp) {
     val p = pal
     val shape = RoundedCornerShape(size * 0.28f)
-    Box(Modifier.size(size).clip(shape).background(p.raised).border(1.dp, p.stroke, shape), contentAlignment = Alignment.Center) {
-        if (code.isEmpty()) {
-            Icon(Ico.Globe, contentDescription = null, tint = p.hint, modifier = Modifier.size(size * 0.46f))
-        } else {
-            Text(code, color = p.text, fontSize = (size.value * 0.32f).sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+    val known = code in FLAG_CODES
+    Box(Modifier.size(size).clip(shape).background(p.raised), contentAlignment = Alignment.Center) {
+        when {
+            known -> Canvas(Modifier.fillMaxSize()) {
+                drawFlag(code)
+                drawRect(
+                    Brush.verticalGradient(
+                        listOf(Color.White.copy(alpha = 0.22f), Color.Transparent, Color.Black.copy(alpha = 0.14f))
+                    )
+                )
+            }
+            code.isEmpty() -> Icon(Ico.Globe, contentDescription = null, tint = p.hint, modifier = Modifier.size(size * 0.46f))
+            else -> Text(code, color = p.text, fontSize = (size.value * 0.32f).sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
         }
+        Box(
+            Modifier.matchParentSize().border(
+                1.dp,
+                if (known) (if (p.dark) Color.White.copy(alpha = 0.16f) else Color.Black.copy(alpha = 0.10f)) else p.stroke,
+                shape
+            )
+        )
     }
 }
 
@@ -731,16 +819,13 @@ fun SignalBars(d: Long, modifier: Modifier = Modifier) {
 fun LatencyText(d: Long, size: TextUnit = 17.sp) {
     val p = pal
     val col by animateColorAsState(delayColor(d), tween(300))
-    Row(verticalAlignment = Alignment.Bottom) {
-        Text(
-            when {
-                d == -2L -> "—"
-                d < 0 -> "✕"
-                else -> "$d"
-            },
-            color = col, fontSize = size, fontWeight = FontWeight.Bold, style = TNum, maxLines = 1
-        )
-        if (d >= 0) Text(" ms", color = p.hint, fontSize = 10.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(bottom = 2.dp))
+    if (d >= 0L || d == -2L) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(if (d == -2L) "—" else "$d", color = col, fontSize = size, fontWeight = FontWeight.Bold, style = TNum, maxLines = 1)
+            if (d >= 0) Text(" ms", color = p.hint, fontSize = 10.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(bottom = 2.dp))
+        }
+    } else {
+        Icon(Ico.Close, contentDescription = "нет ответа", tint = col, modifier = Modifier.size((size.value * 0.95f).dp))
     }
 }
 
