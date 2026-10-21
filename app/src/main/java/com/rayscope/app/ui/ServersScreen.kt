@@ -87,6 +87,7 @@ private fun MItem(icon: ImageVector, text: String, color: Color = ray.text, onCl
 @Composable
 fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
     val c = ray
+    val ui = look
     val servers by Repo.servers.collectAsState()
     val subs by Repo.subs.collectAsState()
     val selectedId by Repo.selectedId.collectAsState()
@@ -159,10 +160,6 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
                         menuOpen = false
                         scope.launch { Actions.updateAllSubs(false) }
                     }
-                    MItem(RayIcons.Signal, "TCP-пинг всех") {
-                        menuOpen = false
-                        scope.launch { Actions.tcpAll() }
-                    }
                     MItem(RayIcons.Bolt, "Лучший сервер") {
                         menuOpen = false
                         scope.launch {
@@ -181,9 +178,15 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
                         clipboard.setText(AnnotatedString(Actions.exportAll()))
                         toast("Ссылки скопированы")
                     }
-                    MItem(RayIcons.Clock, "Сбросить результаты") {
-                        menuOpen = false
-                        Repo.resetTests()
+                    if (ui.dev) {
+                        MItem(RayIcons.Signal, "TCP-пинг всех") {
+                            menuOpen = false
+                            scope.launch { Actions.tcpAll() }
+                        }
+                        MItem(RayIcons.Clock, "Сбросить результаты") {
+                            menuOpen = false
+                            Repo.resetTests()
+                        }
                     }
                     MItem(RayIcons.Trash, "Удалить нерабочие", color = Bad) {
                         menuOpen = false
@@ -261,7 +264,8 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
                     Column(Modifier.animateItem().padding(horizontal = 22.dp, vertical = 6.dp)) {
                         SlimProgress(if (prog.second == 0) 0f else prog.first.toFloat() / prog.second)
                         Text(
-                            "Проверка ${prog.first} из ${prog.second} · ${Actions.modeLabel()}",
+                            if (ui.dev) "Проверка ${prog.first} из ${prog.second} · ${Actions.modeLabel()}"
+                            else "Проверка ${prog.first} из ${prog.second}",
                             color = c.hint, fontSize = 12.sp, style = TNum, modifier = Modifier.padding(top = 6.dp)
                         )
                     }
@@ -355,6 +359,8 @@ fun ServerCard(
     onTest: () -> Unit,
 ) {
     val c = ray
+    val ui = look
+    val compact = ui.compact
     val borderColor = when {
         active -> Good
         selected -> c.accent
@@ -369,39 +375,40 @@ fun ServerCard(
             pop.animateTo(1f, spring(dampingRatio = 0.35f, stiffness = 500f))
         }
     }
+    val vPad = if (compact) 7.dp else 11.dp
     Row(
         modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .card(c, 18.dp, borderColor, if (active || selected) 1.5.dp else 1.dp)
+            .padding(horizontal = 16.dp, vertical = if (compact) 3.dp else 4.dp)
+            .card(c, if (compact) 14.dp else 18.dp, borderColor, if (active || selected) 1.5.dp else 1.dp)
             .clickable(onClick = onClick)
-            .padding(start = 12.dp, end = 4.dp, top = 11.dp, bottom = 11.dp),
+            .padding(start = if (compact) 10.dp else 12.dp, end = 4.dp, top = vPad, bottom = vPad),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box {
-            FlagBox(s.flagEmoji(), 42.dp)
+            FlagBox(s.flagEmoji(), if (compact) 34.dp else 42.dp)
             if (selected || active) {
                 Box(
-                    Modifier.align(Alignment.BottomEnd).offset(x = 4.dp, y = 4.dp).size(16.dp)
+                    Modifier.align(Alignment.BottomEnd).offset(x = 4.dp, y = 4.dp).size(if (compact) 14.dp else 16.dp)
                         .clip(CircleShape).background(c.surface).padding(2.5.dp)
                         .clip(CircleShape).background(if (active) Good else c.accent)
                 )
             }
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(if (compact) 10.dp else 12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                s.cleanName(), color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                s.cleanName(), color = c.text, fontSize = if (compact) 14.sp else 15.sp, fontWeight = FontWeight.SemiBold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(if (compact) 2.dp else 4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Tag(s.protocolLabel().uppercase(), if (active) Good else c.accent)
                 Spacer(Modifier.width(6.dp))
                 val extra = buildList {
                     add(s.network)
-                    add(s.securityLabel())
-                    if (s.tcpPing >= 0) add("tcp ${s.tcpPing}")
+                    if (!compact) add(s.securityLabel())
+                    if (ui.dev && s.tcpPing >= 0) add("tcp ${s.tcpPing}")
                     val st = s.stability()
                     if (st >= 0) add("$st%")
                 }
@@ -410,7 +417,7 @@ fun ServerCard(
                     maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
             }
-            if (s.isDead && s.lastError.isNotEmpty()) {
+            if (!compact && s.isDead && s.lastError.isNotEmpty()) {
                 Text(
                     s.lastError, color = Bad, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 3.dp)
@@ -422,8 +429,8 @@ fun ServerCard(
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             horizontalAlignment = Alignment.End
         ) {
-            LatencyText(s.delay)
-            Spacer(Modifier.height(4.dp))
+            LatencyText(s.delay, if (compact) 15.sp else 17.sp)
+            Spacer(Modifier.height(if (compact) 3.dp else 4.dp))
             SignalBars(s.delay)
         }
         Box(
