@@ -69,6 +69,7 @@ import kotlin.math.sin
 @Composable
 fun DashboardScreen(onToggle: () -> Unit, onGoServers: () -> Unit, onGoIp: () -> Unit) {
     val c = ray
+    val ui = look
     val st = Repo.settings
     val vpn by VpnState.status.collectAsState()
     val servers by Repo.servers.collectAsState()
@@ -139,9 +140,9 @@ fun DashboardScreen(onToggle: () -> Unit, onGoServers: () -> Unit, onGoIp: () ->
                 trailing = { StatusPill(vpn.state) }
             )
 
-            // ---- hero: the scope
+            // ---- hero
             Box(Modifier.appear(0).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                ScopeDial(vpn.state, vpn.pingHistory, onToggle)
+                Dial(vpn.state, vpn.pingHistory, ui.dial, ui.motion, onToggle)
             }
             Column(
                 Modifier.fillMaxWidth().padding(horizontal = 24.dp),
@@ -170,13 +171,11 @@ fun DashboardScreen(onToggle: () -> Unit, onGoServers: () -> Unit, onGoIp: () ->
 
             ServerPicker(server, Modifier.appear(1), onGoServers)
 
-            // ---- live metrics
             if (connected) {
                 LiveBento(vpn, Modifier.appear(2))
-                if (vpn.pingHistory.isNotEmpty()) QualityGroup(vpn.pingHistory, Modifier.appear(3))
+                if (vpn.pingHistory.isNotEmpty()) QualityGroup(vpn.pingHistory, ui.dev, Modifier.appear(3))
             }
 
-            // ---- quick actions
             Column(
                 Modifier.appear(3).fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -204,8 +203,8 @@ fun DashboardScreen(onToggle: () -> Unit, onGoServers: () -> Unit, onGoIp: () ->
                 }
             }
 
-            // ---- connection details
-            if (server != null) {
+            // ---- technical details: developer mode only
+            if (ui.dev && server != null) {
                 val tweaks = buildList {
                     if (st.muxEnabled) add("MUX")
                     if (st.fragmentEnabled) add("FRAGMENT")
@@ -215,7 +214,7 @@ fun DashboardScreen(onToggle: () -> Unit, onGoServers: () -> Unit, onGoIp: () ->
                     if (st.allowLan) add("LAN")
                     if (st.defaultFingerprint.isNotEmpty()) add("FP:" + st.defaultFingerprint.uppercase())
                 }
-                Group("Подключение", modifier = Modifier.appear(4)) {
+                Group("Подключение", modifier = Modifier.appear(4), trailing = { DevTag() }) {
                     if (tweaks.isNotEmpty()) {
                         FlowRow(
                             Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 2.dp),
@@ -257,7 +256,7 @@ private fun StatusPill(state: ConnState) {
         },
         tween(300), label = "pill"
     )
-    val pulse = breathe(1400)
+    val pulse = if (look.motion && (on || busy)) breathe(1400) else null
     val shape = RoundedCornerShape(50)
     Row(
         Modifier.clip(shape).background(col.copy(alpha = 0.12f)).border(1.dp, col.copy(alpha = 0.25f), shape)
@@ -266,7 +265,7 @@ private fun StatusPill(state: ConnState) {
     ) {
         Box(
             Modifier.size(7.dp)
-                .graphicsLayer { alpha = if (on || busy) 0.5f + 0.5f * pulse.value else 1f }
+                .graphicsLayer { alpha = if (pulse != null) 0.5f + 0.5f * pulse.value else 1f }
                 .clip(CircleShape).background(col)
         )
         Spacer(Modifier.width(6.dp))
@@ -281,13 +280,30 @@ private fun StatusPill(state: ConnState) {
     }
 }
 
+@Composable
+private fun loopState(durationMs: Int, target: Float = 360f): State<Float> {
+    val inf = rememberInfiniteTransition(label = "loop")
+    return inf.animateFloat(0f, target, infiniteRepeatable(tween(durationMs, easing = LinearEasing)), label = "loopValue")
+}
+
+@Composable
+private fun pulseState(): State<Float> {
+    val inf = rememberInfiniteTransition(label = "pulse")
+    return inf.animateFloat(
+        0f, 1f,
+        infiniteRepeatable(tween(2200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "pulseValue"
+    )
+}
+
 /**
- * The scope: a dial of 72 ticks around a power disc. Idle = dim ticks; connecting = a bright comet
- * sweeping round; connected = all ticks lit with a slow radar sweep, and the last control pings
- * plotted as blips (further out = faster).
+ * Home dial, three styles:
+ * 0 Scope: 72 ticks; connecting = comet, connected = all lit with radar sweep + ping blips.
+ * 1 Minimal: a single ring; spinning arc while connecting, solid ring when connected.
+ * 2 Pulse: rings radiating from the button while the tunnel is up.
  */
 @Composable
-private fun ScopeDial(state: ConnState, pings: List<Long>, onClick: () -> Unit) {
+private fun Dial(state: ConnState, pings: List<Long>, style: Int, motion: Boolean, onClick: () -> Unit) {
     val c = ray
     val connected = state == ConnState.CONNECTED
     val busy = state == ConnState.CONNECTING || state == ConnState.STOPPING
@@ -308,17 +324,9 @@ private fun ScopeDial(state: ConnState, pings: List<Long>, onClick: () -> Unit) 
         },
         tween(700), label = "energy"
     )
-    val inf = rememberInfiniteTransition(label = "dial")
-    val sweep by inf.animateFloat(
-        0f, 360f,
-        infiniteRepeatable(tween(if (busy) 1300 else 6500, easing = LinearEasing)),
-        label = "sweep"
-    )
-    val pulse by inf.animateFloat(
-        0f, 1f,
-        infiniteRepeatable(tween(2200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "pulse"
-    )
+    val animate = motion && (connected || busy)
+    val sweep = if (animate) loopState(if (busy) 1300 else if (style == 2) 2600 else 6500) else null
+    val pulse = if (animate && style == 0) pulseState() else null
     val faint = c.faint
     val idleTick = c.hint.copy(alpha = 0.28f)
     val disc by animateColorAsState(if (connected) Good else c.raised, tween(400), label = "disc")
@@ -331,63 +339,95 @@ private fun ScopeDial(state: ConnState, pings: List<Long>, onClick: () -> Unit) 
             val cy = size.height / 2f
             val ctr = Offset(cx, cy)
             val rr = size.minDimension / 2f
-
-            val glowA = (0.05f + 0.14f * energy) * (0.75f + 0.25f * pulse)
-            drawCircle(
-                brush = Brush.radialGradient(listOf(col.copy(alpha = glowA), Color.Transparent), center = ctr, radius = rr),
-                radius = rr, center = ctr
-            )
-
             val outer = rr * 0.93f
-            drawCircle(faint, radius = outer, center = ctr, style = Stroke(1.dp.toPx()))
-
-            val n = 72
-            for (i in 0 until n) {
-                val deg = i * 360f / n
-                val d = ((sweep - deg) % 360f + 360f) % 360f
-                val tail = (1f - d / (if (busy) 110f else 150f)).coerceAtLeast(0f)
-                val k = when {
-                    busy -> tail
-                    connected -> 0.45f + 0.55f * tail
-                    else -> 0f
-                } * energy
-                val long = i % 6 == 0
-                val r1 = outer - 6.dp.toPx()
-                val r2 = r1 - (if (long) 12.dp else 7.dp).toPx()
-                val a = Math.toRadians(deg.toDouble() - 90.0)
-                val ca = cos(a).toFloat()
-                val sa = sin(a).toFloat()
-                drawLine(
-                    color = lerp(idleTick, col, k.coerceIn(0f, 1f)),
-                    start = Offset(cx + ca * r1, cy + sa * r1),
-                    end = Offset(cx + ca * r2, cy + sa * r2),
-                    strokeWidth = (if (long) 2.dp else 1.5.dp).toPx(),
-                    cap = StrokeCap.Round
-                )
-            }
-
             val inner = rr * 0.52f
-            drawCircle(faint, radius = inner, center = ctr, style = Stroke(1.dp.toPx()))
-
-            if (connected && shown.isNotEmpty()) {
-                val band0 = inner + 8.dp.toPx()
-                val band1 = outer - 28.dp.toPx()
-                shown.forEachIndexed { i, p ->
-                    val a = Math.toRadians(-90.0 + i * (360.0 / 24))
-                    val q = if (p < 0) 0f else (1f - p.toFloat() / 1200f).coerceIn(0.05f, 1f)
-                    val r = band0 + (band1 - band0) * q
-                    val last = i == shown.lastIndex
+            val sw = sweep?.value ?: 0f
+            when (style) {
+                1 -> {
+                    val ringR = rr * 0.72f
+                    val w = 3.dp.toPx()
+                    drawCircle(faint, radius = ringR, center = ctr, style = Stroke(w))
+                    if (busy) {
+                        drawArc(
+                            color = col, startAngle = sw - 90f, sweepAngle = 90f, useCenter = false,
+                            topLeft = Offset(cx - ringR, cy - ringR), size = androidx.compose.ui.geometry.Size(ringR * 2, ringR * 2),
+                            style = Stroke(w, cap = StrokeCap.Round)
+                        )
+                    } else if (connected) {
+                        drawCircle(col.copy(alpha = 0.9f * energy), radius = ringR, center = ctr, style = Stroke(w))
+                        drawCircle(col.copy(alpha = 0.10f * energy), radius = ringR + 10.dp.toPx(), center = ctr, style = Stroke(1.dp.toPx()))
+                    }
+                }
+                2 -> {
+                    drawCircle(faint, radius = inner + 6.dp.toPx(), center = ctr, style = Stroke(1.dp.toPx()))
+                    if (connected || busy) {
+                        val phase = sw / 360f
+                        for (k in 0 until 3) {
+                            val t = ((phase + k / 3f) % 1f)
+                            val r = inner + (outer - inner) * t
+                            drawCircle(
+                                col.copy(alpha = (1f - t) * 0.55f * energy), radius = r, center = ctr,
+                                style = Stroke((2.5f - 1.5f * t).dp.toPx())
+                            )
+                        }
+                    } else {
+                        drawCircle(faint, radius = outer, center = ctr, style = Stroke(1.dp.toPx()))
+                    }
+                }
+                else -> {
+                    val pv = pulse?.value ?: 0.5f
+                    val glowA = (0.05f + 0.14f * energy) * (0.75f + 0.25f * pv)
                     drawCircle(
-                        color = blipColors[i],
-                        radius = (if (last) 4.dp else 2.5.dp).toPx(),
-                        center = Offset(cx + cos(a).toFloat() * r, cy + sin(a).toFloat() * r),
-                        alpha = if (last) 1f else 0.65f
+                        brush = Brush.radialGradient(listOf(col.copy(alpha = glowA), Color.Transparent), center = ctr, radius = rr),
+                        radius = rr, center = ctr
                     )
+                    drawCircle(faint, radius = outer, center = ctr, style = Stroke(1.dp.toPx()))
+                    val n = 72
+                    for (i in 0 until n) {
+                        val deg = i * 360f / n
+                        val d = ((sw - deg) % 360f + 360f) % 360f
+                        val tail = if (sweep == null) 1f else (1f - d / (if (busy) 110f else 150f)).coerceAtLeast(0f)
+                        val k = when {
+                            busy -> if (sweep == null) 0.6f else tail
+                            connected -> 0.45f + 0.55f * tail
+                            else -> 0f
+                        } * energy
+                        val long = i % 6 == 0
+                        val r1 = outer - 6.dp.toPx()
+                        val r2 = r1 - (if (long) 12.dp else 7.dp).toPx()
+                        val a = Math.toRadians(deg.toDouble() - 90.0)
+                        val ca = cos(a).toFloat()
+                        val sa = sin(a).toFloat()
+                        drawLine(
+                            color = lerp(idleTick, col, k.coerceIn(0f, 1f)),
+                            start = Offset(cx + ca * r1, cy + sa * r1),
+                            end = Offset(cx + ca * r2, cy + sa * r2),
+                            strokeWidth = (if (long) 2.dp else 1.5.dp).toPx(),
+                            cap = StrokeCap.Round
+                        )
+                    }
+                    drawCircle(faint, radius = inner, center = ctr, style = Stroke(1.dp.toPx()))
+                    if (connected && shown.isNotEmpty()) {
+                        val band0 = inner + 8.dp.toPx()
+                        val band1 = outer - 28.dp.toPx()
+                        shown.forEachIndexed { i, p ->
+                            val a = Math.toRadians(-90.0 + i * (360.0 / 24))
+                            val q = if (p < 0) 0f else (1f - p.toFloat() / 1200f).coerceIn(0.05f, 1f)
+                            val r = band0 + (band1 - band0) * q
+                            val last = i == shown.lastIndex
+                            drawCircle(
+                                color = blipColors[i],
+                                radius = (if (last) 4.dp else 2.5.dp).toPx(),
+                                center = Offset(cx + cos(a).toFloat() * r, cy + sin(a).toFloat() * r),
+                                alpha = if (last) 1f else 0.65f
+                            )
+                        }
+                    }
                 }
             }
         }
         Box(
-            Modifier.size(120.dp)
+            Modifier.size(if (style == 1) 128.dp else 120.dp)
                 .bounceClick(enabled = !busy, onClick = onClick)
                 .clip(CircleShape)
                 .background(disc)
@@ -403,7 +443,7 @@ private fun ScopeDial(state: ConnState, pings: List<Long>, onClick: () -> Unit) 
                 label = "dialIcon"
             ) { on ->
                 if (on) {
-                    val p = remember { Animatable(0f) }
+                    val p = remember { Animatable(if (motion) 0f else 1f) }
                     LaunchedEffect(Unit) { p.animateTo(1f, tween(700, easing = FastOutSlowInEasing)) }
                     DrawnIcon(listOf(SHIELD_PATH, CHECK_SMALL_PATH), p.value, InkOn, Modifier.size(46.dp), strokeWidth = 2.1f)
                 } else {
@@ -499,7 +539,7 @@ private fun LiveBento(vpn: VpnStatus, modifier: Modifier) {
 }
 
 @Composable
-private fun QualityGroup(history: List<Long>, modifier: Modifier) {
+private fun QualityGroup(history: List<Long>, dev: Boolean, modifier: Modifier) {
     val st = Repo.settings
     val okList = history.filter { it >= 0 }
     val fails = history.size - okList.size
@@ -515,8 +555,10 @@ private fun QualityGroup(history: List<Long>, modifier: Modifier) {
         KV("Средний пинг", if (avg < 0) "—" else "$avg ms")
         KV("Джиттер", if (jitter < 0) "—" else "$jitter ms")
         KV("Потери", "$loss%", if (fails > 0) Bad else Good)
-        KV("Последние", history.takeLast(8).joinToString(" ") { if (it < 0) "✕" else "$it" }, mono = true)
-        KV("Интервал проверки", "${st.livePingInterval} с")
+        if (dev) {
+            KV("Последние", history.takeLast(8).joinToString(" ") { if (it < 0) "✕" else "$it" }, mono = true)
+            KV("Интервал проверки", "${st.livePingInterval} с")
+        }
     }
 }
 

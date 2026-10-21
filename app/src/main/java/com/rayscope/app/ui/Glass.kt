@@ -8,7 +8,7 @@
  * The screen content is recorded into a GraphicsLayer (the "backdrop"). Each glass element
  * redraws the part of the backdrop under it through an AGSL RuntimeShader that bends pixels near
  * the rounded edge like a lens, then adds a light-angle dependent specular rim. No blur.
- * Real refraction needs Android 13+; older devices get a solid fallback.
+ * Real refraction needs Android 13+; older devices (or glass = off) get a solid frosted fallback.
  */
 package com.rayscope.app.ui
 
@@ -24,7 +24,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -103,22 +102,24 @@ private class GlassPos {
 }
 
 /**
- * Clear Liquid Glass, toned down: gentle lens bending at the edges, a slightly denser tint so text
- * under it never fights with the controls, and a thin specular rim lit from the top-left.
+ * Liquid Glass with an intensity from the look settings: 0 = frosted solid, 1 = soft lens, 2 = strong lens.
  */
 @Composable
 fun Modifier.liquidGlass(
     cornerRadius: Dp,
     tint: Color = Color.Unspecified,
-    refractionHeight: Dp = 10.dp,
-    refractionAmount: Dp = 14.dp,
 ): Modifier {
     val c = ray
+    val level = LocalUi.current.glass
     val backdrop = LocalBackdrop.current
     val layer = rememberGraphicsLayer()
     val pos = remember { GlassPos() }
     val lens = remember { if (Build.VERSION.SDK_INT >= 33) Lens() else null }
-    val shape = RoundedCornerShape(cornerRadius)
+    val refractionHeight = if (level >= 2) 16.dp else 10.dp
+    val refractionAmount = if (level >= 2) 26.dp else 14.dp
+    // same radius as the shadow shape, so the lens, fill and shadow line up for every corner setting
+    val radius = cornerRadius * c.corner
+    val shape = c.shape(cornerRadius)
     return this
         .shadow(
             elevation = if (c.dark) 6.dp else 10.dp,
@@ -129,17 +130,17 @@ fun Modifier.liquidGlass(
         )
         .onGloballyPositioned { pos.origin = it.positionInRoot() }
         .drawBehind {
-            val r = cornerRadius.toPx().coerceAtMost(size.minDimension / 2f)
+            val r = radius.toPx().coerceAtMost(size.minDimension / 2f)
             val cr = CornerRadius(r, r)
             val bd = backdrop
             var refracted = false
-            if (bd != null && lens != null && Build.VERSION.SDK_INT >= 33) {
+            if (level > 0 && bd != null && lens != null && Build.VERSION.SDK_INT >= 33) {
                 val off = pos.origin - bd.origin
                 layer.record {
                     translate(-off.x, -off.y) { drawLayer(bd.layer) }
                 }
                 layer.renderEffect = lens.effect(
-                    size.width, size.height, r,
+                    size.width, size.height, r.coerceAtLeast(1f),
                     refractionHeight.toPx().coerceAtMost(size.minDimension / 2f),
                     refractionAmount.toPx()
                 )
@@ -161,7 +162,7 @@ fun Modifier.liquidGlass(
             val icr = CornerRadius((r - sw / 2f).coerceAtLeast(0f))
             if (refracted && lens != null && Build.VERSION.SDK_INT >= 33) {
                 drawRoundRect(
-                    brush = ShaderBrush(lens.highlight(size.width, size.height, r, c.rim)),
+                    brush = ShaderBrush(lens.highlight(size.width, size.height, r.coerceAtLeast(1f), c.rim)),
                     topLeft = inset, size = inner, cornerRadius = icr, style = Stroke(sw)
                 )
             } else {
@@ -185,7 +186,7 @@ fun GlassSurface(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (pressed) 1.05f else 1f,
+        targetValue = if (pressed && LocalUi.current.motion) 1.05f else 1f,
         animationSpec = spring(dampingRatio = 0.5f, stiffness = 600f),
         label = "glassPress"
     )
@@ -200,6 +201,9 @@ fun GlassSurface(
     }
     Box(m, contentAlignment = contentAlignment, content = content)
 }
+
+/** True when the device can render real refraction. */
+val glassSupported: Boolean get() = Build.VERSION.SDK_INT >= 33
 
 // ------------------------------------------------------------------ shaders
 

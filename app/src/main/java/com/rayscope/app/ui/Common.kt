@@ -1,5 +1,6 @@
 package com.rayscope.app.ui
 
+import android.os.Build
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -38,6 +39,8 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -53,20 +56,24 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rayscope.app.data.Repo
+import com.rayscope.app.data.UiPrefs
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
-// ------------------------------------------------------------------ palette ("Scope": ink + signal cyan)
+// ------------------------------------------------------------------ palette ("Scope": ink + signal accent)
 
 val Good = Color(0xFF3DDC97)
 val Mid = Color(0xFFFFB547)
@@ -103,6 +110,8 @@ data class RayColors(
     val glassFill: Color,
     val glassFallback: Color,
     val rim: Color,
+    /** corner radius multiplier from the look settings */
+    val corner: Float = 1f,
 ) {
     val card: Color get() = surface
     val field: Color get() = raised
@@ -142,18 +151,48 @@ private val LightRay = RayColors(
 )
 
 val LocalRay = staticCompositionLocalOf { DarkRay }
+val LocalUi = staticCompositionLocalOf { UiPrefs() }
 
 val ray: RayColors
     @Composable get() = LocalRay.current
 
+/** Current look & feel preferences. */
+val look: UiPrefs
+    @Composable get() = LocalUi.current
+
+fun accentFor(index: Int, dark: Boolean): Color {
+    val arr = if (dark) UiPrefs.ACCENTS_DARK else UiPrefs.ACCENTS_LIGHT
+    return Color(arr.getOrElse(index) { arr[0] })
+}
+
 @Composable
-fun RayTheme(mode: Int, content: @Composable () -> Unit) {
-    val dark = when (mode) {
+fun RayTheme(ui: UiPrefs, content: @Composable () -> Unit) {
+    val dark = when (ui.theme) {
         1 -> false
         2 -> true
         else -> isSystemInDarkTheme()
     }
-    val r = if (dark) DarkRay else LightRay
+    val ctx = LocalContext.current
+    var r = if (dark) DarkRay else LightRay
+    if (dark && ui.amoled) {
+        r = r.copy(
+            bg = Color.Black,
+            surface = Color(0xFF0C0D10),
+            raised = Color(0xFF17191E),
+            glassFill = Color(0xFF0C0D10).copy(alpha = 0.6f),
+            glassFallback = Color(0xF20C0D10),
+        )
+    }
+    val accent: Color = if (ui.accent < 0 && Build.VERSION.SDK_INT >= 31) {
+        (if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)).primary
+    } else {
+        accentFor(ui.accent, dark)
+    }
+    r = r.copy(
+        accent = accent,
+        onAccent = if (accent.luminance() > 0.45f) InkOn else Color.White,
+        corner = ui.cornerScale,
+    )
     val scheme = if (dark) {
         darkColorScheme(
             primary = r.accent, onPrimary = r.onAccent, secondary = r.accent,
@@ -173,8 +212,14 @@ fun RayTheme(mode: Int, content: @Composable () -> Unit) {
             outline = Color(0xFFD0D4DB),
         )
     }
+    val d = LocalDensity.current
     MaterialTheme(colorScheme = scheme) {
-        CompositionLocalProvider(LocalRay provides r, LocalContentColor provides r.text) {
+        CompositionLocalProvider(
+            LocalRay provides r,
+            LocalUi provides ui,
+            LocalContentColor provides r.text,
+            LocalDensity provides Density(d.density, d.fontScale * ui.fontScale),
+        ) {
             content()
         }
     }
@@ -185,8 +230,11 @@ fun RayBackground(modifier: Modifier = Modifier, content: @Composable BoxScope.(
     Box(modifier.fillMaxSize().background(ray.bg), content = content)
 }
 
+/** Rounded shape scaled by the corner setting. */
+fun RayColors.shape(radius: Dp): RoundedCornerShape = RoundedCornerShape(radius * corner)
+
 fun Modifier.card(c: RayColors, radius: Dp = 20.dp, stroke: Color = c.stroke, width: Dp = 1.dp): Modifier {
-    val shape = RoundedCornerShape(radius)
+    val shape = c.shape(radius)
     return this.clip(shape).background(c.surface).border(width, stroke, shape)
 }
 
@@ -220,13 +268,18 @@ fun Modifier.bounceClick(enabled: Boolean = true, onClick: () -> Unit): Modifier
         .clickable(interactionSource = src, indication = null, enabled = enabled, onClick = onClick)
 }
 
-/** Staggered entrance: fade + rise, used on cards when a screen opens. */
+/** Staggered entrance: fade + rise, used on cards when a screen opens. Off when motion is reduced. */
 @Composable
 fun Modifier.appear(index: Int = 0): Modifier {
-    val a = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        delay(index * 40L)
-        a.animateTo(1f, spring(dampingRatio = 0.85f, stiffness = 280f))
+    val motion = LocalUi.current.motion
+    val a = remember { Animatable(if (motion) 0f else 1f) }
+    LaunchedEffect(motion) {
+        if (motion) {
+            delay(index * 40L)
+            a.animateTo(1f, spring(dampingRatio = 0.85f, stiffness = 280f))
+        } else {
+            a.snapTo(1f)
+        }
     }
     return this.graphicsLayer {
         alpha = a.value.coerceIn(0f, 1f)
@@ -259,6 +312,10 @@ fun breathe(durationMs: Int = 1800): State<Float> {
 /** Text that rolls vertically when its value changes (speed counters, timers). */
 @Composable
 fun TickerText(text: String, color: Color, fontSize: TextUnit, weight: FontWeight = FontWeight.SemiBold) {
+    if (!LocalUi.current.motion) {
+        Text(text, color = color, fontSize = fontSize, fontWeight = weight, maxLines = 1, style = TNum)
+        return
+    }
     AnimatedContent(
         targetState = text,
         transitionSpec = {
@@ -312,8 +369,14 @@ fun Tag(text: String, color: Color = Color.Unspecified) {
     Text(
         text, color = col, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace,
         maxLines = 1, letterSpacing = 0.4.sp,
-        modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(col.copy(alpha = 0.12f)).padding(horizontal = 6.dp, vertical = 2.dp)
+        modifier = Modifier.clip(c.shape(6.dp)).background(col.copy(alpha = 0.12f)).padding(horizontal = 6.dp, vertical = 2.dp)
     )
+}
+
+/** Marks developer-only blocks. */
+@Composable
+fun DevTag() {
+    Tag("DEV", Purple)
 }
 
 // ------------------------------------------------------------------ containers
@@ -386,8 +449,9 @@ fun IconTile(
     iconModifier: Modifier = Modifier,
     solid: Boolean = false,
 ) {
+    val c = ray
     Box(
-        Modifier.size(size).clip(RoundedCornerShape(size * 0.32f)).background(if (solid) tint else tint.copy(alpha = 0.15f)),
+        Modifier.size(size).clip(c.shape(size * 0.32f)).background(if (solid) tint else tint.copy(alpha = 0.15f)),
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -456,7 +520,7 @@ fun Toggle(checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Uni
     val c = ray
     val t by animateFloatAsState(if (checked) 1f else 0f, spring(dampingRatio = 0.7f, stiffness = 600f), label = "toggle")
     val track = lerp(c.raised, c.accent, t)
-    val thumb = lerp(if (c.dark) Color(0xFF8E97A6) else Color.White, if (c.dark) InkOn else Color.White, t)
+    val thumb = lerp(if (c.dark) Color(0xFF8E97A6) else Color.White, c.onAccent, t)
     Box(
         Modifier.size(width = 46.dp, height = 28.dp).alpha(if (enabled) 1f else 0.5f)
             .clip(CircleShape).background(track).border(1.dp, c.stroke, CircleShape)
@@ -593,7 +657,7 @@ fun PrefText(
 @Composable
 fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
     val c = ray
-    val shape = RoundedCornerShape(12.dp)
+    val shape = c.shape(12.dp)
     BoxWithConstraints(
         modifier.fillMaxWidth().height(38.dp).clip(shape).background(c.raised).border(1.dp, c.stroke, shape).padding(3.dp)
     ) {
@@ -605,8 +669,8 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, mod
         )
         Box(
             Modifier.offset(x = x).width(w).fillMaxHeight()
-                .shadow(if (c.dark) 0.dp else 2.dp, RoundedCornerShape(9.dp))
-                .clip(RoundedCornerShape(9.dp))
+                .shadow(if (c.dark) 0.dp else 2.dp, c.shape(9.dp))
+                .clip(c.shape(9.dp))
                 .background(if (c.dark) Color(0xFF2A303B) else Color.White)
         )
         Row(Modifier.fillMaxSize()) {
@@ -682,7 +746,7 @@ fun PillButton(
     val c = ray
     val tint = if (color != Color.Unspecified) color else c.accent
     val fg = if (primary) (if (tint.luminance() > 0.45f) InkOn else Color.White) else tint
-    val shape = RoundedCornerShape(16.dp)
+    val shape = c.shape(16.dp)
     Row(
         modifier
             .bounceClick(enabled = enabled, onClick = onClick)
@@ -721,7 +785,7 @@ fun InputField(
         if (label != null) {
             CapsLabel(label, Modifier.padding(start = 4.dp, top = 6.dp, bottom = 6.dp))
         }
-        val shape = RoundedCornerShape(14.dp)
+        val shape = c.shape(14.dp)
         Row(
             Modifier.fillMaxWidth().clip(shape).background(if (onCard) c.raised else c.surface).border(1.dp, c.stroke, shape)
                 .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -756,12 +820,13 @@ fun InputField(
 @Composable
 fun FlagBox(flag: String, size: Dp = 40.dp) {
     val c = ray
-    val shape = RoundedCornerShape(size * 0.3f)
+    val showFlag = flag.isNotEmpty() && LocalUi.current.flags
+    val shape = c.shape(size * 0.3f)
     Box(
         Modifier.size(size).clip(shape).background(c.raised).border(1.dp, c.stroke, shape),
         contentAlignment = Alignment.Center
     ) {
-        if (flag.isEmpty()) {
+        if (!showFlag) {
             Icon(RayIcons.Globe, contentDescription = null, tint = c.hint, modifier = Modifier.size(size * 0.48f))
         } else {
             Text(flag, fontSize = (size.value * 0.5f).sp)

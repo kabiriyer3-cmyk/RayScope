@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_small_name">RayScope · кнопка</string>
+    <string name="widget_wide_name">RayScope · статус</string>
+    <string name="widget_small_desc">Подключение в одно касание</string>
+    <string name="widget_wide_desc">Сервер, пинг, скорость и кнопка подключения</string>
+</resources>

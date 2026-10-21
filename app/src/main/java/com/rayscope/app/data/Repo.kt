@@ -1,6 +1,7 @@
 package com.rayscope.app.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import com.rayscope.app.model.Server
 import com.rayscope.app.model.Subscription
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,6 +12,7 @@ import java.io.File
 
 object Repo {
     private lateinit var dir: File
+    private lateinit var prefs: SharedPreferences
     lateinit var settings: Settings
         private set
 
@@ -18,20 +20,27 @@ object Repo {
     val subs = MutableStateFlow<List<Subscription>>(emptyList())
     val selectedId = MutableStateFlow<String?>(null)
     val themeMode = MutableStateFlow(0)
+    val ui = MutableStateFlow(UiPrefs())
 
     fun init(ctx: Context) {
         dir = ctx.filesDir
         settings = Settings(ctx)
+        prefs = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
         servers.value = dedupeIds(loadList(File(dir, "servers.json")) { Server.fromJson(it) })
         subs.value = loadList(File(dir, "subs.json")) { Subscription.fromJson(it) }
         selectedId.value = settings.selectedId.ifEmpty { null }
-        themeMode.value = settings.themeMode
+        ui.value = UiPrefs.load(prefs)
+        themeMode.value = ui.value.theme
     }
 
-    fun setTheme(mode: Int) {
-        themeMode.value = mode
-        settings.themeMode = mode
+    fun setUi(f: (UiPrefs) -> UiPrefs) {
+        val n = f(ui.value)
+        ui.value = n
+        themeMode.value = n.theme
+        n.save(prefs)
     }
+
+    fun setTheme(mode: Int) = setUi { it.copy(theme = mode) }
 
     private fun dedupeIds(list: List<Server>): List<Server> {
         val used = HashSet<String>()
