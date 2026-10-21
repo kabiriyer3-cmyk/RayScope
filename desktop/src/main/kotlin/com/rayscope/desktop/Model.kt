@@ -62,13 +62,16 @@ data class Server(
         return ""
     }
 
-    /** Two-letter country code from the flag in the name (Windows can't draw flag emoji). */
-    fun countryCode(): String = flagCode(flagEmoji())
+    /** Country code from the flag emoji in the name, or guessed from the name itself ("Germany", "NL-2", "Москва"). */
+    fun countryCode(): String = flagCode(flagEmoji()).ifEmpty { Countries.guess(name) }
 
+    /** Name without emoji: Windows can't draw flag emoji, we draw our own flags instead. */
     fun cleanName(): String {
-        val f = flagEmoji()
-        val n = if (f.isNotEmpty()) name.replace(f, "") else name
-        return n.trim().ifEmpty { "$address:$port" }
+        val sb = StringBuilder()
+        name.codePoints().forEach { cp -> if (!isEmojiCodePoint(cp)) sb.appendCodePoint(cp) }
+        val n = sb.toString().split(' ').filter { it.isNotEmpty() }.joinToString(" ")
+            .trim().trim('|', '-', '·', ',', '_', ':').trim()
+        return n.ifEmpty { "$address:$port" }
     }
 
     fun securityLabel(): String = when (security.lowercase()) {
@@ -174,6 +177,11 @@ data class Server(
         )
     }
 }
+
+/** Emoji, pictographs, regional indicators, variation selectors and joiners. */
+fun isEmojiCodePoint(cp: Int): Boolean =
+    cp in 0x1F000..0x1FAFF || cp in 0x2600..0x27BF || cp in 0x2B00..0x2BFF || cp in 0x2300..0x23FF ||
+        cp == 0xFE0F || cp == 0x200D || cp == 0x20E3 || cp in 0xE0020..0xE007F
 
 fun flagCode(flag: String): String {
     val cps = flag.codePoints().toArray()

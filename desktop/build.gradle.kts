@@ -13,6 +13,8 @@ dependencies {
     implementation(compose.material3)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.8.1")
     implementation("org.json:json:20240303")
+    // dark Windows title bar (DwmSetWindowAttribute)
+    implementation("net.java.dev.jna:jna:5.14.0")
 }
 
 application {
