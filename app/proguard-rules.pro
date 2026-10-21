@@ -1,0 +1,4 @@
+-keep class libv2ray.** { *; }
+-keep class go.** { *; }
+-dontwarn okhttp3.**
+-dontwarn okio.**
