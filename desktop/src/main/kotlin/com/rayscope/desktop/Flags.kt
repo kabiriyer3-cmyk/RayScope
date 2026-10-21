@@ -29,14 +29,18 @@ private val K = Color(0xFF141414)
 private val UK_BLUE = Color(0xFF012169)
 private val UK_RED = Color(0xFFC8102E)
 
-private fun DrawScope.hs(vararg c: Color) {
-    val h = size.height / c.size
-    c.forEachIndexed { i, col -> drawRect(col, Offset(0f, i * h), Size(size.width, h + 1f)) }
+/** equal horizontal stripes, top to bottom */
+private fun DrawScope.hs(a: Color, b: Color, c: Color? = null) {
+    val cs = if (c == null) listOf(a, b) else listOf(a, b, c)
+    val h = size.height / cs.size
+    cs.forEachIndexed { i, col -> drawRect(col, Offset(0f, i * h), Size(size.width, h + 1f)) }
 }
 
-private fun DrawScope.vs(vararg c: Color) {
-    val w = size.width / c.size
-    c.forEachIndexed { i, col -> drawRect(col, Offset(i * w, 0f), Size(w + 1f, size.height)) }
+/** equal vertical stripes, left to right */
+private fun DrawScope.vs(a: Color, b: Color, c: Color) {
+    val cs = listOf(a, b, c)
+    val w = size.width / cs.size
+    cs.forEachIndexed { i, col -> drawRect(col, Offset(i * w, 0f), Size(w + 1f, size.height)) }
 }
 
 private fun DrawScope.hw(weights: List<Float>, colors: List<Color>) {
