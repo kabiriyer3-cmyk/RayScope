@@ -1,5 +1,5 @@
 /*
- * RayScope icon set: 24x24 rounded line icons drawn in the style of SF Symbols.
+ * RayScope icon set: 24x24 rounded line icons.
  * Many glyphs follow the geometry of Lucide (https://lucide.dev, ISC License).
  */
 package com.rayscope.app.ui
@@ -91,9 +91,18 @@ object RayIcons {
     val Settings by lazy {
         lineIcon("settings", "M20 7h-9", "M14 17H5", circ(17f, 17f, 3f), circ(7f, 7f, 3f))
     }
+    val Sliders by lazy {
+        lineIcon("sliders", "M21 4h-7", "M10 4H3", "M21 12h-9", "M8 12H3", "M21 20h-5", "M12 20H3", "M14 2v4", "M8 10v4", "M16 18v4")
+    }
+    val Radar by lazy {
+        lineIcon("radar", circ(12f, 12f, 10f), circ(12f, 12f, 6f), circ(12f, 12f, 2f), "M12 12l6.5-6.5")
+    }
     val Search by lazy { lineIcon("search", circ(11f, 11f, 7.5f), "M21 21l-4.6-4.6") }
     val Refresh by lazy {
         lineIcon("refresh", "M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8", "M21 3v5h-5")
+    }
+    val Repeat by lazy {
+        lineIcon("repeat", "M17 2l4 4l-4 4", "M3 11v-1a4 4 0 0 1 4-4h14", "M7 22l-4-4l4-4", "M21 13v1a4 4 0 0 1-4 4H3")
     }
     val Sort by lazy { lineIcon("sort", "M21 16l-4 4l-4-4", "M17 20V4", "M3 8l4-4l4 4", "M7 4v16") }
     val More by lazy { solidIcon("more", circ(12f, 12f, 1.3f), circ(19f, 12f, 1.3f), circ(5f, 12f, 1.3f)) }
@@ -112,6 +121,7 @@ object RayIcons {
     }
     val Close by lazy { lineIcon("close", "M18 6L6 18", "M6 6l12 12") }
     val Power by lazy { lineIcon("power", "M12 2v10", "M18.4 6.6a9 9 0 1 1-12.77.04") }
+    val Play by lazy { lineIcon("play", "M6 3l14 9l-14 9z") }
     val Bolt by lazy { lineIcon("bolt", "M13 2L4 14h8l-1 8l9-12h-8z") }
     val Copy by lazy { lineIcon("copy", rrect(8f, 8f, 14f, 14f, 2f), "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2") }
     val Share by lazy { lineIcon("share", "M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8", "M16 6l-4-4l-4 4", "M12 2v13") }
@@ -122,6 +132,7 @@ object RayIcons {
     val ArrowDown by lazy { lineIcon("down", "M12 5v14", "M19 12l-7 7l-7-7") }
     val ArrowUp by lazy { lineIcon("up", "M12 19V5", "M5 12l7-7l7 7") }
     val Clock by lazy { lineIcon("clock", circ(12f, 12f, 10f), "M12 6v6l4 2") }
+    val Timer by lazy { lineIcon("timer", "M10 2h4", "M12 14l3-3", circ(12f, 14f, 8f)) }
     val Link by lazy {
         lineIcon(
             "link",
@@ -154,6 +165,7 @@ object RayIcons {
         lineIcon("alert", "M21.73 18l-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3", "M12 9v4", "M12 17h.01")
     }
     val Lock by lazy { lineIcon("lock", rrect(3f, 11f, 18f, 11f, 2f), "M7 11V7a5 5 0 0 1 10 0v4") }
+    val Key by lazy { lineIcon("key", circ(7.5f, 15.5f, 5.5f), "M21 2l-9.6 9.6", "M15.5 7.5l3 3L22 7l-3-3") }
     val Wifi by lazy {
         lineIcon("wifi", "M12 20h.01", "M2 8.82a15 15 0 0 1 20 0", "M5 12.86a10 10 0 0 1 14 0", "M8.5 16.43a5 5 0 0 1 7 0")
     }
@@ -169,6 +181,29 @@ object RayIcons {
     val Eye by lazy {
         lineIcon("eye", "M2.06 12.35a1 1 0 0 1 0-.7a10.75 10.75 0 0 1 19.88 0a1 1 0 0 1 0 .7a10.75 10.75 0 0 1-19.88 0", circ(12f, 12f, 3f))
     }
+    val Plug by lazy { lineIcon("plug", "M12 22v-5", "M9 8V2", "M15 8V2", "M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8z") }
+    val Route by lazy {
+        lineIcon("route", circ(6f, 19f, 3f), "M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15", circ(18f, 5f, 3f))
+    }
+    val Fork by lazy {
+        lineIcon("fork", circ(12f, 18f, 3f), circ(6f, 6f, 3f), circ(18f, 6f, 3f), "M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9", "M12 12v3")
+    }
+    val Layers by lazy { lineIcon("layers", "M12 2L2 7l10 5l10-5z", "M2 17l10 5l10-5", "M2 12l10 5l10-5") }
+    val Scissors by lazy {
+        lineIcon("scissors", circ(6f, 6f, 3f), "M8.12 8.12L12 12", "M20 4L8.12 15.88", circ(6f, 18f, 3f), "M14.8 14.8L20 20")
+    }
+    val Hash by lazy { lineIcon("hash", "M4 9h16", "M4 15h16", "M10 3L8 21", "M16 3l-2 18") }
+    val Network by lazy {
+        lineIcon(
+            "network", rrect(16f, 16f, 6f, 6f, 1f), rrect(2f, 16f, 6f, 6f, 1f), rrect(9f, 2f, 6f, 6f, 1f),
+            "M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3", "M12 12V8"
+        )
+    }
+    val Ban by lazy { lineIcon("ban", circ(12f, 12f, 10f), "M4.93 4.93l14.14 14.14") }
+    val Filter by lazy { lineIcon("filter", "M22 3H2l8 9.46V19l4 2v-8.54z") }
+    val Download by lazy { lineIcon("download", "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "M7 10l5 5l5-5", "M12 15V3") }
+    val User by lazy { lineIcon("user", circ(12f, 8f, 5f), "M20 21a8 8 0 0 0-16 0") }
+    val Target by lazy { lineIcon("target", circ(12f, 12f, 10f), circ(12f, 12f, 6f), circ(12f, 12f, 2f)) }
 }
 
 /**
