@@ -8,8 +8,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,6 +30,7 @@ import com.rayscope.app.BuildConfig
 import com.rayscope.app.core.CoreManager
 import com.rayscope.app.core.XrayConfig
 import com.rayscope.app.data.Actions
+import com.rayscope.app.data.Backup
 import com.rayscope.app.data.Repo
 import com.rayscope.app.data.UiPrefs
 import com.rayscope.app.net.IpCheckModel
@@ -72,11 +75,11 @@ fun LookPrefs() {
             listOf("Система", "Светлая", "Тёмная"),
             selected = ui.theme,
             onSelect = { v -> Repo.setUi { it.copy(theme = v) } },
-            modifier = Modifier.padding(14.dp)
+            modifier = Modifier.padding(12.dp)
         )
-        Hairline()
+        Hairline(0.dp)
         PrefSwitch(
-            RayIcons.Moon, Indigo, "AMOLED", "Чисто чёрный фон в тёмной теме, бережёт батарею на OLED",
+            null, c.hint, "AMOLED", "Чисто чёрный фон в тёмной теме, бережёт батарею на OLED",
             ui.amoled, divider = false
         ) { v -> Repo.setUi { it.copy(amoled = v) } }
     }
@@ -84,10 +87,10 @@ fun LookPrefs() {
     Group(
         "Акцент",
         modifier = Modifier.appear(2),
-        footer = "Цвет кнопок, циферблата и виджетов."
+        footer = "Один цвет на всё приложение: кнопка подключения, выбранный сервер, графики и виджеты."
     ) {
         FlowRow(
-            Modifier.fillMaxWidth().padding(14.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -95,91 +98,80 @@ fun LookPrefs() {
                 Swatch(accentFor(i, c.dark), ui.accent == i) { Repo.setUi { it.copy(accent = i) } }
             }
         }
-        Hairline()
+        Hairline(0.dp)
         PrefRow(
-            null, c.accent, "Цвет",
+            null, c.hint, "Цвет",
             value = if (ui.accent < 0) "Material You" else UiPrefs.ACCENT_NAMES.getOrElse(ui.accent) { "" },
             divider = dynamicOk
         )
         if (dynamicOk) {
             PrefSwitch(
-                RayIcons.Sun, Pink, "Material You", "Взять цвет из обоев (Android 12+)",
+                null, c.hint, "Material You", "Взять цвет из обоев (Android 12+)",
                 ui.accent < 0, divider = false
             ) { v -> Repo.setUi { it.copy(accent = if (v) -1 else 0) } }
         }
     }
 
-    Group(
-        "Liquid Glass",
-        modifier = Modifier.appear(3),
-        footer = if (glassSupported) "Стекло только на панели вкладок и плавающей кнопке. Сильное гнёт фон заметнее."
-        else "На этом устройстве (до Android 13) стекло заменяется матовой подложкой."
-    ) {
+    Group("Форма и текст", modifier = Modifier.appear(3)) {
+        PrefRow(null, c.hint, "Скругления", divider = false)
         Segmented(
-            listOf("Выкл", "Мягкое", "Сильное"),
-            selected = ui.glass,
-            onSelect = { v -> Repo.setUi { it.copy(glass = v) } },
-            modifier = Modifier.padding(14.dp)
-        )
-    }
-
-    Group("Форма и текст", modifier = Modifier.appear(4)) {
-        PrefRow(RayIcons.Layers, Purple, "Скругления", divider = false)
-        Segmented(
-            listOf("Острые", "Обычные", "Круглые"),
+            listOf("Острые", "Обычные", "Мягкие"),
             selected = ui.corners,
             onSelect = { v -> Repo.setUi { it.copy(corners = v) } },
-            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp)
+            modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
         )
-        Hairline()
-        PrefRow(RayIcons.Eye, Blue, "Размер текста", divider = false)
+        Hairline(0.dp)
+        PrefRow(null, c.hint, "Размер текста", divider = false)
         Segmented(
             listOf("Мелкий", "Обычный", "Крупный"),
             selected = ui.textScale,
             onSelect = { v -> Repo.setUi { it.copy(textScale = v) } },
-            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp)
+            modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
         )
     }
 
-    Group("Главный экран", modifier = Modifier.appear(5)) {
+    Group("Навигация", modifier = Modifier.appear(4)) {
         PrefChoice(
-            RayIcons.Target, Cyan, "Циферблат",
-            options = listOf("Скоп", "Минимал", "Пульс"),
-            selected = ui.dial,
-            subtitle = "Вид большой кнопки подключения"
-        ) { v -> Repo.setUi { it.copy(dial = v) } }
+            RayIcons.Home, c.hint, "Открывать при запуске",
+            options = listOf("Главная", "Серверы", "Проверка"),
+            selected = ui.startTab
+        ) { v -> Repo.setUi { it.copy(startTab = v) } }
         PrefSwitch(
-            RayIcons.Apps, Pink, "Подписи вкладок", "Текст под иконками в нижней панели",
-            ui.tabLabels, divider = false
+            RayIcons.Apps, c.hint, "Подписи вкладок", "Текст под иконками в нижней панели",
+            ui.tabLabels
         ) { v -> Repo.setUi { it.copy(tabLabels = v) } }
+        PrefSwitch(
+            RayIcons.Vibrate, c.hint, "Вибрация", "Короткий отклик, когда туннель поднялся или упал",
+            ui.haptics, divider = false
+        ) { v -> Repo.setUi { it.copy(haptics = v) } }
     }
 
-    Group("Списки и движение", modifier = Modifier.appear(6)) {
+    Group("Списки и движение", modifier = Modifier.appear(5)) {
         PrefSwitch(
-            RayIcons.Layers, Teal, "Компактный список", "Больше серверов на экране",
+            RayIcons.Layers, c.hint, "Компактный список", "Больше серверов на экране",
             ui.compact
         ) { v -> Repo.setUi { it.copy(compact = v) } }
         PrefSwitch(
-            RayIcons.Globe, Blue, "Флаги стран", "Иначе нейтральная иконка",
+            RayIcons.Globe, c.hint, "Флаги стран", "Иначе нейтральная иконка",
             ui.flags
         ) { v -> Repo.setUi { it.copy(flags = v) } }
         PrefSwitch(
-            RayIcons.Play, Good, "Анимации", "Переходы, счётчики, пульс циферблата",
+            RayIcons.Play, c.hint, "Анимации", "Плавные переходы между экранами",
             ui.motion, divider = false
         ) { v -> Repo.setUi { it.copy(motion = v) } }
     }
 
     Group(
         "Виджеты на рабочий стол",
-        modifier = Modifier.appear(7),
+        modifier = Modifier.appear(6),
         footer = "Виджеты тёмные и берут цвет акцента. Кнопка на виджете подключает и отключает VPN."
     ) {
         PrefRow(
-            RayIcons.Power, Good, "Кнопка 2×2", subtitle = "Подключение одним нажатием",
+            RayIcons.Power, c.hint, "Кнопка 2×2", subtitle = "Подключение одним нажатием",
             chevron = true, onClick = { pinWidget(ctx, SmallWidget::class.java) }
         )
         PrefRow(
-            RayIcons.Signal, Cyan, "Панель 4×1", subtitle = "Сервер, статус, пинг и скорость",
+            RayIcons.Signal, c.hint, "Панель 4×1", subtitle = "Сервер, статус, пинг и скорость",
             chevron = true, divider = false, onClick = { pinWidget(ctx, WideWidget::class.java) }
         )
     }
@@ -191,7 +183,6 @@ fun LookPrefs() {
             toast("Оформление сброшено")
         },
         icon = RayIcons.Refresh,
-        color = Gray,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)
     )
 }
@@ -200,8 +191,8 @@ fun LookPrefs() {
 private fun Swatch(color: Color, selected: Boolean, onClick: () -> Unit) {
     val c = ray
     Box(
-        Modifier.size(42.dp).bounceClick(onClick = onClick).clip(CircleShape)
-            .border(2.dp, if (selected) c.text else Color.Transparent, CircleShape)
+        Modifier.size(34.dp).bounceClick(onClick = onClick).clip(CircleShape)
+            .border(1.5.dp, if (selected) c.text else Color.Transparent, CircleShape)
             .padding(4.dp).clip(CircleShape).background(color),
         contentAlignment = Alignment.Center
     ) {
@@ -209,59 +200,105 @@ private fun Swatch(color: Color, selected: Boolean, onClick: () -> Unit) {
             Icon(
                 RayIcons.Check, contentDescription = null,
                 tint = if (color.luminance() > 0.45f) InkOn else Color.White,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(14.dp)
             )
         }
     }
 }
 
-/** Live mock of the main UI pieces with the current look settings. */
+/** Live sample of the main UI pieces with the current look settings. */
 @Composable
 private fun LookPreview() {
     val c = ray
-    Column(Modifier.appear(0).fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).card(c, 24.dp).padding(16.dp)) {
-        CapsLabel("Предпросмотр")
-        Spacer(Modifier.height(12.dp))
+    Column(Modifier.appear(0).fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).card(c).padding(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(54.dp).clip(CircleShape).background(c.accent.copy(alpha = 0.15f)).border(1.5.dp, c.accent, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(RayIcons.Power, contentDescription = null, tint = c.accent, modifier = Modifier.size(24.dp))
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Защищено", color = Good, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                Text("00:12:48 · ↓ 4.2 MB/s", color = c.hint, fontSize = 13.sp, style = TNum)
-            }
-            LatencyText(42L)
+            Box(Modifier.size(8.dp).clip(CircleShape).background(Good))
+            Spacer(Modifier.width(10.dp))
+            Text("Подключено", color = c.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text("00:12:48", color = c.hint, fontSize = 13.sp, style = TNum)
         }
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(12.dp))
         Row(
-            Modifier.fillMaxWidth().clip(c.shape(14.dp)).background(c.raised).padding(10.dp),
+            Modifier.fillMaxWidth().clip(c.shape(16.dp)).background(c.raised).padding(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            FlagBox(Fmt.flag("NL"), 34.dp)
+            FlagBox(Fmt.flag("NL"), 30.dp)
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text("Amsterdam #1", color = c.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(3.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Tag("VLESS", c.accent)
-                    Spacer(Modifier.width(6.dp))
-                    Text("tcp · reality", color = c.hint, fontSize = 12.sp)
-                }
+                Text("Amsterdam #1", color = c.text, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("vless · tcp · reality", color = c.hint, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
             }
-            SignalBars(42L)
+            LatencyText(42L, 14.sp)
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Chip("Все", selected = true, small = true) {}
             Chip("Рабочие", selected = false, small = true) {}
-            Chip("★", selected = false, small = true) {}
+            Chip("Избранное", selected = false, small = true) {}
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
         PillButton("Подключить", onClick = {}, primary = true, icon = RayIcons.Power, modifier = Modifier.fillMaxWidth())
+    }
+}
+
+// ------------------------------------------------------------------ backup
+
+@Composable
+fun BackupPrefs() {
+    val ctx = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+    var confirmReset by remember { mutableStateOf(false) }
+    val c = ray
+
+    Group(
+        null,
+        modifier = Modifier.appear(0),
+        footer = "В копию входят все настройки, адреса подписок и серверы, добавленные ссылками. В них есть ключи доступа, поэтому храните копию как пароль."
+    ) {
+        PrefRow(
+            RayIcons.Upload, c.hint, "Скопировать резервную копию", "JSON в буфер обмена, можно переслать себе",
+            onClick = {
+                clipboard.setText(AnnotatedString(Backup.export(ctx)))
+                toast("Резервная копия в буфере")
+            }
+        )
+        PrefRow(
+            RayIcons.Download, c.hint, "Восстановить из буфера", "Настройки заменятся, подписки и ссылки добавятся",
+            divider = false,
+            onClick = {
+                val text = clipboard.getText()?.text.orEmpty()
+                scope.launch {
+                    try {
+                        toast("Восстановлено: " + Backup.import(ctx, text))
+                    } catch (e: IllegalArgumentException) {
+                        toast(e.message ?: "Не получилось восстановить")
+                    }
+                }
+            }
+        )
+    }
+
+    Group("Сброс", modifier = Modifier.appear(1), footer = "Серверы и подписки останутся, вернутся только значения по умолчанию.") {
+        PrefRow(RayIcons.Trash, Bad, "Сбросить все настройки", divider = false, onClick = { confirmReset = true })
+    }
+
+    if (confirmReset) {
+        AlertDialog(
+            onDismissRequest = { confirmReset = false },
+            containerColor = c.surface,
+            shape = c.shape(24.dp),
+            title = { Text("Сбросить все настройки?", color = c.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold) },
+            text = { Text("Подключение, пинг, DNS, маршруты и оформление вернутся к значениям по умолчанию.", color = c.hint) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmReset = false
+                    Backup.reset(ctx)
+                    toast("Настройки сброшены")
+                }) { Text("Сбросить", color = Bad) }
+            },
+            dismissButton = { TextButton(onClick = { confirmReset = false }) { Text("Отмена", color = c.hint) } }
+        )
     }
 }
 
@@ -283,20 +320,20 @@ fun DevPrefs(onOpen: (Route) -> Unit) {
         modifier = Modifier.appear(0),
         footer = "Показывает технические детали по всему приложению: TCP-пинг, сырые ссылки, JSON, ASN, маршрут, тонкие настройки ядра. Включается 7 нажатиями на «Версия» в настройках."
     ) {
-        PrefSwitch(RayIcons.Code, Purple, "Режим разработчика", null, ui.dev, divider = false) { v ->
+        PrefSwitch(RayIcons.Code, c.hint, "Режим разработчика", null, ui.dev, divider = false) { v ->
             Repo.setUi { it.copy(dev = v) }
         }
     }
 
     Group("Инструменты", modifier = Modifier.appear(1)) {
-        PrefRow(RayIcons.Logs, Gray, "Журнал событий", chevron = true, onClick = { onOpen(Route.Logs) })
+        PrefRow(RayIcons.Logs, c.hint, "Журнал событий", chevron = true, onClick = { onOpen(Route.Logs) })
         PrefRow(
-            RayIcons.Hash, Teal, "Локальный прокси",
+            RayIcons.Hash, c.hint, "Локальный прокси",
             subtitle = "SOCKS ${st.socksPort} · HTTP ${st.httpPort}" + (if (st.allowLan) " · LAN" else ""),
             chevron = true, onClick = { onOpen(Route.Pref(SetPage.PROXY)) }
         )
         PrefRow(
-            RayIcons.Code, Purple, "JSON текущего сервера", subtitle = "Полный конфиг Xray в буфер",
+            RayIcons.Code, c.hint, "JSON текущего сервера", subtitle = "Полный конфиг Xray в буфер",
             onClick = {
                 val s = Repo.selected()
                 if (s == null) {
@@ -313,21 +350,21 @@ fun DevPrefs(onOpen: (Route) -> Unit) {
             }
         )
         PrefRow(
-            RayIcons.Share, Blue, "Скопировать все ссылки", value = "${servers.size}",
+            RayIcons.Share, c.hint, "Скопировать все ссылки", value = "${servers.size}",
             onClick = {
                 clipboard.setText(AnnotatedString(Actions.exportAll()))
                 toast("Ссылки скопированы")
             }
         )
         PrefRow(
-            RayIcons.Signal, Teal, "TCP-пинг всех", subtitle = "Только рукопожатие с портом, без ядра",
+            RayIcons.Signal, c.hint, "TCP-пинг всех", subtitle = "Только рукопожатие с портом, без ядра",
             onClick = {
                 scope.launch { Actions.tcpAll() }
                 toast("TCP-пинг запущен")
             }
         )
         PrefRow(
-            RayIcons.Clock, Orange, "Сбросить результаты проверок", subtitle = "Пинг, стабильность и ошибки всех серверов",
+            RayIcons.Clock, c.hint, "Сбросить результаты проверок", subtitle = "Пинг, стабильность и ошибки всех серверов",
             divider = false,
             onClick = {
                 Repo.resetTests()
@@ -369,7 +406,6 @@ fun DevPrefs(onOpen: (Route) -> Unit) {
         KV("Ядро Xray", CoreManager.version(), mono = true)
         KV("Android", "${Build.VERSION.RELEASE} · SDK ${Build.VERSION.SDK_INT}")
         KV("Устройство", "${Build.MANUFACTURER} ${Build.MODEL}")
-        KV("Liquid Glass", if (glassSupported) "RuntimeShader" else "матовая подложка")
         KV("Серверы / подписки", "${servers.size} / ${subs.size}", mono = true)
         KV("Режим пинга", Actions.modeLabel())
         KV("Прокси", "socks ${st.socksPort} · http ${st.httpPort}", mono = true)
