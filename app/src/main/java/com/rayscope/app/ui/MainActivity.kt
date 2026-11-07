@@ -19,39 +19,32 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -63,11 +56,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -149,10 +142,13 @@ fun AppRoot() {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val motion = look.motion
+    val haptics = look.haptics
+    val haptic = LocalHapticFeedback.current
     var stack by remember { mutableStateOf(listOf<Route>()) }
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var tab by rememberSaveable { mutableIntStateOf(Repo.ui.value.startTab) }
     val push: (Route) -> Unit = { stack = stack + it }
     val pop: () -> Unit = { stack = stack.dropLast(1) }
+    val vpn by VpnState.status.collectAsState()
 
     val vpnLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         if (r.resultCode == Activity.RESULT_OK) RayVpnService.start(ctx) else toast("Разрешение на VPN не выдано")
@@ -164,6 +160,15 @@ fun AppRoot() {
         ) {
             notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+    }
+
+    // a short tick when the tunnel goes up or down
+    val lastState = remember { arrayOf(vpn.state) }
+    LaunchedEffect(vpn.state) {
+        val prev = lastState[0]
+        lastState[0] = vpn.state
+        val settled = vpn.state == ConnState.CONNECTED || vpn.state == ConnState.STOPPED
+        if (haptics && settled && prev != vpn.state) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
     }
 
     val startVpn: () -> Unit = {
@@ -217,75 +222,64 @@ fun AppRoot() {
     }
 
     BackHandler(enabled = stack.isNotEmpty()) { pop() }
+    BackHandler(enabled = stack.isEmpty() && tab != 0) { tab = 0 }
 
-    val rootBackdrop = rememberBackdrop()
     RayBackground {
-        BackdropSource(rootBackdrop, Modifier.fillMaxSize()) {
-            AnimatedContent(
-                targetState = stack,
-                transitionSpec = {
-                    if (!motion) {
-                        EnterTransition.None togetherWith ExitTransition.None
-                    } else if (targetState.size >= initialState.size) {
-                        (slideInHorizontally(spring(dampingRatio = 0.9f, stiffness = 380f)) { it / 3 } + fadeIn(tween(220))) togetherWith
-                            (slideOutHorizontally(tween(260)) { -it / 6 } + fadeOut(tween(200)))
-                    } else {
-                        (slideInHorizontally(tween(260)) { -it / 6 } + fadeIn(tween(220))) togetherWith
-                            (slideOutHorizontally(spring(dampingRatio = 0.9f, stiffness = 380f)) { it / 3 } + fadeOut(tween(200)))
-                    }
-                },
-                label = "route"
-            ) { st ->
-                when (val r = st.lastOrNull()) {
-                    null -> AnimatedContent(
-                        targetState = tab,
-                        transitionSpec = {
-                            if (!motion) {
-                                EnterTransition.None togetherWith ExitTransition.None
-                            } else {
-                                (fadeIn(tween(220, delayMillis = 50)) + scaleIn(tween(260, delayMillis = 50), initialScale = 0.98f)) togetherWith
-                                    fadeOut(tween(110))
-                            }
-                        },
-                        label = "tab"
-                    ) { t ->
-                        when (t) {
-                            0 -> DashboardScreen(onToggle = toggle, onGoServers = { tab = 1 }, onGoIp = { tab = 2 })
-                            1 -> ServersScreen(onOpen = { push(Route.Detail(it)) }, onToggle = toggle)
-                            2 -> IpCheckScreen()
-                            else -> SettingsScreen(onOpen = push)
-                        }
-                    }
-                    is Route.Detail -> ServerDetailScreen(r.id, onBack = pop, onConnect = connect)
-                    Route.Apps -> AppsScreen(onBack = pop)
-                    Route.Logs -> LogsScreen(onBack = pop)
-                    Route.Subs -> SubsScreen(onBack = pop)
-                    is Route.Pref -> SettingsPageScreen(r.page, onBack = pop, onOpen = push)
+        AnimatedContent(
+            targetState = stack,
+            transitionSpec = {
+                if (!motion) {
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else if (targetState.size >= initialState.size) {
+                    (slideInHorizontally(tween(200)) { it / 10 } + fadeIn(tween(180))) togetherWith fadeOut(tween(120))
+                } else {
+                    fadeIn(tween(180)) togetherWith (slideOutHorizontally(tween(200)) { it / 10 } + fadeOut(tween(140)))
                 }
+            },
+            label = "route"
+        ) { st ->
+            when (val r = st.lastOrNull()) {
+                null -> AnimatedContent(
+                    targetState = tab,
+                    transitionSpec = {
+                        if (!motion) {
+                            EnterTransition.None togetherWith ExitTransition.None
+                        } else {
+                            fadeIn(tween(140)) togetherWith fadeOut(tween(90))
+                        }
+                    },
+                    label = "tab"
+                ) { t ->
+                    when (t) {
+                        0 -> DashboardScreen(onToggle = toggle, onGoServers = { tab = 1 }, onGoIp = { tab = 2 })
+                        1 -> ServersScreen(onOpen = { push(Route.Detail(it)) }, onToggle = toggle)
+                        2 -> IpCheckScreen()
+                        else -> SettingsScreen(onOpen = push)
+                    }
+                }
+                is Route.Detail -> ServerDetailScreen(r.id, onBack = pop, onConnect = connect)
+                Route.Apps -> AppsScreen(onBack = pop)
+                Route.Logs -> LogsScreen(onBack = pop)
+                Route.Subs -> SubsScreen(onBack = pop)
+                is Route.Pref -> SettingsPageScreen(r.page, onBack = pop, onOpen = push)
             }
         }
         AnimatedVisibility(
             visible = stack.isEmpty(),
             modifier = Modifier.align(Alignment.BottomCenter),
-            enter = slideInVertically(spring(dampingRatio = 0.8f, stiffness = 400f)) { it } + fadeIn(),
-            exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(160))
+            enter = fadeIn(tween(140)),
+            exit = fadeOut(tween(100))
         ) {
-            CompositionLocalProvider(LocalBackdrop provides rootBackdrop) {
-                GlassTabBar(tab = tab, onTab = { tab = it })
-            }
+            BottomBar(tab = tab, connected = vpn.state == ConnState.CONNECTED, onTab = { tab = it })
         }
     }
 }
 
 private data class TabItem(val icon: ImageVector, val label: String)
 
-/**
- * Floating Liquid Glass tab bar. The active tab expands into a labelled capsule (optional); the
- * highlight moves like a drop of liquid: the leading edge runs ahead on a stiff spring while the
- * trailing edge catches up on a soft one, so it stretches in flight and settles back into shape.
- */
+/** Flat bottom bar on the page background with a hairline on top. The active tab is simply brighter. */
 @Composable
-private fun GlassTabBar(tab: Int, onTab: (Int) -> Unit) {
+private fun BottomBar(tab: Int, connected: Boolean, onTab: (Int) -> Unit) {
     val c = ray
     val labels = look.tabLabels
     val items = listOf(
@@ -294,72 +288,41 @@ private fun GlassTabBar(tab: Int, onTab: (Int) -> Unit) {
         TabItem(RayIcons.Radar, "Проверка"),
         TabItem(RayIcons.Sliders, "Настройки"),
     )
-    val small = if (labels) 54.dp else 62.dp
-    val big = if (labels) 122.dp else 62.dp
-    val h = 50.dp
-    val prev = remember { IntArray(1) { tab } }
-    val movingRight = tab >= prev[0]
-    val lead = spring<Dp>(dampingRatio = 0.72f, stiffness = 650f)
-    val trail = spring<Dp>(dampingRatio = 0.78f, stiffness = 260f)
-    val left by animateDpAsState(small * tab, if (movingRight) trail else lead, label = "tabLeft")
-    val right by animateDpAsState(small * tab + big, if (movingRight) lead else trail, label = "tabRight")
-    SideEffect { prev[0] = tab }
-
-    GlassSurface(30.dp, Modifier.navigationBarsPadding().padding(bottom = 10.dp)) {
-        Box(Modifier.padding(5.dp)) {
-            Box(
-                Modifier.offset(x = left).width((right - left).coerceAtLeast(0.dp)).height(h)
-                    .clip(c.shape(25.dp))
-                    .background(c.accent.copy(alpha = if (c.dark) 0.17f else 0.13f))
-            )
-            Row(horizontalArrangement = Arrangement.Start, verticalAlignment = Alignment.CenterVertically) {
-                items.forEachIndexed { i, item ->
-                    val sel = i == tab
-                    val w by animateDpAsState(
-                        if (sel) big else small,
-                        spring(dampingRatio = 0.8f, stiffness = 420f),
-                        label = "tabW$i"
-                    )
-                    TabButton(item, sel, labels, Modifier.width(w).height(h)) { onTab(i) }
+    Column(Modifier.fillMaxWidth().background(c.bg)) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(c.stroke))
+        Row(
+            Modifier.fillMaxWidth().navigationBarsPadding().height(if (labels) 58.dp else 50.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            items.forEachIndexed { i, item ->
+                val sel = i == tab
+                val color by animateColorAsState(if (sel) c.text else c.hint.copy(alpha = 0.8f), tween(120), label = "tab$i")
+                Column(
+                    Modifier.weight(1f).fillMaxHeight().clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onTab(i) },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Box {
+                        Icon(item.icon, contentDescription = item.label, tint = color, modifier = Modifier.size(22.dp))
+                        if (i == 0 && connected) {
+                            Box(
+                                Modifier.align(Alignment.TopEnd).offset(x = 3.dp, y = (-1).dp).size(7.dp)
+                                    .clip(CircleShape).background(Good)
+                            )
+                        }
+                    }
+                    if (labels) {
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            item.label, color = color, fontSize = 11.sp,
+                            fontWeight = if (sel) FontWeight.Medium else FontWeight.Normal, maxLines = 1
+                        )
+                    }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun TabButton(item: TabItem, selected: Boolean, labels: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    val c = ray
-    val color by animateColorAsState(if (selected) c.accent else c.text.copy(alpha = 0.78f), tween(220), label = "tabColor")
-    val bump = remember { Animatable(1f) }
-    val motion = look.motion
-    LaunchedEffect(selected) {
-        if (selected && motion) {
-            bump.snapTo(0.8f)
-            bump.animateTo(1f, spring(dampingRatio = 0.4f, stiffness = 600f))
-        }
-    }
-    Row(
-        modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            item.icon, contentDescription = item.label, tint = color,
-            modifier = Modifier.size(22.dp).graphicsLayer {
-                scaleX = bump.value
-                scaleY = bump.value
-            }
-        )
-        AnimatedVisibility(
-            visible = selected && labels,
-            enter = fadeIn(tween(180, delayMillis = 60)) + expandHorizontally(spring(dampingRatio = 0.8f, stiffness = 420f)),
-            exit = fadeOut(tween(100)) + shrinkHorizontally(tween(180))
-        ) {
-            Text(
-                item.label, fontSize = 13.sp, color = color, fontWeight = FontWeight.SemiBold, maxLines = 1,
-                modifier = Modifier.padding(start = 7.dp)
-            )
         }
     }
 }
