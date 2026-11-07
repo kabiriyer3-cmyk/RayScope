@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.unit.dp
@@ -40,7 +41,7 @@ private fun lineIcon(name: String, vararg paths: String): ImageVector {
             pathData = PathParser().parsePathString(d).toNodes(),
             fill = null,
             stroke = SolidColor(Color.Black),
-            strokeLineWidth = 1.9f,
+            strokeLineWidth = 1.6f,
             strokeLineCap = StrokeCap.Round,
             strokeLineJoin = StrokeJoin.Round
         )
@@ -73,6 +74,31 @@ const val SHIELD_PATH =
     "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
 const val CHECK_SMALL_PATH = "M9 12l2 2l4-4"
 const val CHECK_PATH = "M20 6L9 17l-5-5"
+
+/*
+ * The RayScope mark: a geometric R made of three planes in a 77 x 100 box. The leg is the "ray"
+ * and takes the accent colour. Same geometry as the launcher icon and desktop/launcher/make_icon.py.
+ */
+const val MARK_BOWL_PATH = "M0 0H44A25 25 0 0 1 44 50H0z"
+const val MARK_STEM_PATH = "M0 56H25V100H0z"
+const val MARK_LEG_PATH = "M31 56H58L77 100H50z"
+
+@Composable
+fun RayMark(modifier: Modifier = Modifier, ink: Color = ray.text, rayColor: Color = ray.accent) {
+    val parts = remember {
+        listOf(MARK_BOWL_PATH, MARK_STEM_PATH, MARK_LEG_PATH).map { PathParser().parsePathString(it).toPath() }
+    }
+    Canvas(modifier) {
+        val k = minOf(size.width / 77f, size.height / 100f)
+        translate((size.width - 77f * k) / 2f, (size.height - 100f * k) / 2f) {
+            scale(k, k, pivot = Offset.Zero) {
+                drawPath(parts[0], ink)
+                drawPath(parts[1], ink)
+                drawPath(parts[2], rayColor)
+            }
+        }
+    }
+}
 
 object RayIcons {
     val Home by lazy {
@@ -202,6 +228,8 @@ object RayIcons {
     val Ban by lazy { lineIcon("ban", circ(12f, 12f, 10f), "M4.93 4.93l14.14 14.14") }
     val Filter by lazy { lineIcon("filter", "M22 3H2l8 9.46V19l4 2v-8.54z") }
     val Download by lazy { lineIcon("download", "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "M7 10l5 5l5-5", "M12 15V3") }
+    val Upload by lazy { lineIcon("upload", "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "M17 8l-5-5l-5 5", "M12 3v12") }
+    val Vibrate by lazy { lineIcon("vibrate", "M2 8l2 2l-2 2l2 2l-2 2", "M22 8l-2 2l2 2l-2 2l2 2", rrect(8f, 5f, 8f, 14f, 1.5f)) }
     val User by lazy { lineIcon("user", circ(12f, 8f, 5f), "M20 21a8 8 0 0 0-16 0") }
     val Target by lazy { lineIcon("target", circ(12f, 12f, 10f), circ(12f, 12f, 6f), circ(12f, 12f, 2f)) }
 }
@@ -216,7 +244,7 @@ fun DrawnIcon(
     progress: Float,
     color: Color,
     modifier: Modifier = Modifier,
-    strokeWidth: Float = 1.9f,
+    strokeWidth: Float = 1.6f,
     stagger: Float = 0.35f,
 ) {
     val parsed = remember(paths) { paths.map { PathParser().parsePathString(it).toPath() } }
