@@ -144,7 +144,12 @@ fun SettingsScreen(onOpen: (Route) -> Unit) {
                     if (ui.theme == 2 || (ui.theme == 0 && c.dark)) RayIcons.Moon else RayIcons.Sun,
                     c.hint, "Оформление",
                     subtitle = "$themeName · $accentName" + (if (ui.compact) " · компактно" else "") + (if (ui.amoled) " · AMOLED" else ""),
-                    chevron = true, divider = false, onClick = { onOpen(Route.Pref(SetPage.LOOK)) }
+                    chevron = true, onClick = { onOpen(Route.Pref(SetPage.LOOK)) }
+                )
+                PrefRow(
+                    RayIcons.Upload, c.hint, "Резервная копия",
+                    subtitle = "Экспорт и импорт настроек и подписок, сброс",
+                    chevron = true, divider = false, onClick = { onOpen(Route.Pref(SetPage.BACKUP)) }
                 )
             }
 
