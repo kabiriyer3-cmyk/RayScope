@@ -79,17 +79,19 @@ private const val HALF_PI = 1.5707964f
 
 /** Spring presets. Everything that moves uses one of these, so the whole app feels like one material. */
 object Fluid {
-    /** Press squash and small bounces: underdamped and quick. */
-    fun <T> jelly(): SpringSpec<T> = spring(dampingRatio = 0.45f, stiffness = 520f)
+    // All presets are critically damped (dampingRatio = 1): motion eases in and settles, it never overshoots or bounces.
+
+    /** Press feedback: quick, settles at once. */
+    fun <T> jelly(): SpringSpec<T> = spring(dampingRatio = 1f, stiffness = 700f)
 
     /** Leading edge of a moving highlight. */
-    fun <T> lead(): SpringSpec<T> = spring(dampingRatio = 0.78f, stiffness = 820f)
+    fun <T> lead(): SpringSpec<T> = spring(dampingRatio = 1f, stiffness = 700f)
 
-    /** Trailing edge: slower, so a highlight stretches like a drop and then pulls itself together. */
-    fun <T> trail(): SpringSpec<T> = spring(dampingRatio = 0.85f, stiffness = 190f)
+    /** Trailing edge: a little slower, so a highlight stretches slightly toward its target and catches up. */
+    fun <T> trail(): SpringSpec<T> = spring(dampingRatio = 1f, stiffness = 320f)
 
-    /** Colours and sizes that should settle without overshoot. */
-    fun <T> soft(): SpringSpec<T> = spring(dampingRatio = 0.9f, stiffness = 260f)
+    /** Colours and sizes. */
+    fun <T> soft(): SpringSpec<T> = spring(dampingRatio = 1f, stiffness = 300f)
 }
 
 /** Animated range [start, end] of a moving highlight, in any unit (item index, dp, px). */
@@ -312,7 +314,7 @@ fun GooeyConnectButton(
         Fluid.jelly(), label = "squash"
     )
     val heat by animateFloatAsState(if (on) 1f else if (busy) 0.7f else 0f, tween(650), label = "heat")
-    val spread by animateFloatAsState(if (busy && motion) 1f else 0f, spring(dampingRatio = 0.5f, stiffness = 120f), label = "spread")
+    val spread by animateFloatAsState(if (busy && motion) 1f else 0f, spring(dampingRatio = 1f, stiffness = 120f), label = "spread")
     val glow by animateFloatAsState(if (on) 1f else 0f, tween(800), label = "glow")
     val live = motion && (on || busy || spread > 0.01f || heat > 0.01f)
     val slow: State<Float>

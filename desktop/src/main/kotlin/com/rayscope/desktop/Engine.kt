@@ -31,9 +31,11 @@ data class Status(
     /** (uplink, downlink) bytes per second, newest last */
     val history: List<Pair<Long, Long>> = emptyList(),
     val systemProxy: Boolean = false,
+    /** all traffic of the PC goes through the TUN adapter */
+    val tun: Boolean = false,
 )
 
-/** Runs the main xray process, toggles the system proxy and watches the session. */
+/** Runs the main xray process, toggles the system proxy or the TUN adapter and watches the session. */
 object Engine {
     val status = MutableStateFlow(Status())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -84,11 +86,18 @@ object Engine {
     }
 
     fun setMode(mode: Int) {
+        val old = Store.prefs.value.mode
         Store.setPrefs { it.copy(mode = mode) }
         scope.launch {
             lock.withLock {
                 if (proc != null && isConnected) {
-                    if (mode == 1) {
+                    if (mode == Mode.TUN || old == Mode.TUN) {
+                        // the adapter comes and goes with the session: restart it in the new mode
+                        if (mode != old) {
+                            stop(keepProxy = false)
+                            start()
+                        }
+                    } else if (mode == Mode.SYSTEM) {
                         val ok = SystemProxy.set(true, httpPort)
                         if (!ok && SystemProxy.supported) Notice.show("Не удалось включить системный прокси")
                     } else {
@@ -101,6 +110,15 @@ object Engine {
     }
 
     private fun validPort(p: Int, def: Int): Int = if (p in 1025..65535) p else def
+
+    /** A restarted RayScope (for example elevated for TUN) may still see the ports of the old one for a moment. */
+    private fun waitFree(port: Int): Boolean {
+        repeat(30) {
+            if (Core.portFree(port)) return true
+            Thread.sleep(100)
+        }
+        return Core.portFree(port)
+    }
 
     private fun start() {
         val s = Store.selected()
@@ -115,8 +133,8 @@ object Engine {
             val socks = validPort(p.socksPort, 10808)
             var http = validPort(p.httpPort, 10809)
             if (http == socks) http = socks + 1
-            if (!Core.portFree(socks)) throw IOException("Порт $socks занят другим приложением (v2rayN, Clash?). Смените порт в настройках")
-            if (!Core.portFree(http)) throw IOException("Порт $http занят другим приложением (v2rayN, Clash?). Смените порт в настройках")
+            if (!waitFree(socks)) throw IOException("Порт $socks занят другим приложением (v2rayN, Clash?). Смените порт в настройках")
+            if (!waitFree(http)) throw IOException("Порт $http занят другим приложением (v2rayN, Clash?). Смените порт в настройках")
             val api = Core.freePort()
             val cfg = XrayConfig.build(s, p, socks, http, api)
             val pr = Core.start(cfg, "main", log = true)
@@ -129,8 +147,13 @@ object Engine {
             httpPort = http
             socksPort = socks
             Log.add("Подключено: ${s.cleanName()} · HTTP $http · SOCKS $socks")
+            var tun = false
+            if (p.mode == Mode.TUN) {
+                Tun.start(s, socks, p)
+                tun = true
+            }
             var sys = false
-            if (p.mode == 1) {
+            if (p.mode == Mode.SYSTEM) {
                 if (SystemProxy.supported) {
                     sys = SystemProxy.set(true, http)
                     if (!sys) Notice.show("Не удалось включить системный прокси: используйте 127.0.0.1:$http вручную")
@@ -146,9 +169,13 @@ object Engine {
                 serverName = s.cleanName(),
                 since = System.currentTimeMillis(),
                 systemProxy = sys,
+                tun = tun,
             )
-            startMonitors(pr, api, http)
+            startMonitors(pr, api, http, tun)
         } catch (e: Exception) {
+            Tun.stop()
+            proc?.destroy()
+            proc = null
             if (SystemProxy.active) SystemProxy.set(false, httpPort)
             status.value = Status(error = e.message ?: "ошибка подключения")
             Log.add("Ошибка подключения: ${e.message}")
@@ -158,6 +185,7 @@ object Engine {
     private fun stop(keepProxy: Boolean) {
         monitors?.cancel()
         monitors = null
+        Tun.stop()
         val pr = proc
         proc = null
         if (pr != null) {
@@ -174,22 +202,26 @@ object Engine {
         if (pr != null) Log.add("Отключено")
     }
 
-    private fun startMonitors(pr: Process, api: Int, http: Int) {
+    private fun startMonitors(pr: Process, api: Int, http: Int, tun: Boolean) {
         monitors = scope.launch {
-            // watchdog: the core died on its own
+            // watchdog: the core or the TUN adapter died on its own
             launch {
                 while (isActive) {
                     delay(1000)
-                    if (!pr.isAlive) {
+                    val coreDead = !pr.isAlive
+                    val tunDead = tun && !Tun.running
+                    if (coreDead || tunDead) {
                         scope.launch {
                             lock.withLock {
                                 if (proc === pr) {
                                     monitors?.cancel()
                                     monitors = null
                                     proc = null
+                                    Tun.stop()
+                                    pr.destroy()
                                     if (SystemProxy.active) SystemProxy.set(false, http)
-                                    Log.add("Ядро неожиданно остановилось")
-                                    status.value = Status(error = "Ядро остановилось: смотрите журнал")
+                                    Log.add(if (coreDead) "Ядро неожиданно остановилось" else "TUN неожиданно остановился")
+                                    status.value = Status(error = if (coreDead) "Ядро остановилось: смотрите журнал" else "TUN остановился: смотрите журнал")
                                 }
                             }
                         }
@@ -238,10 +270,11 @@ object Engine {
         }
     }
 
-    /** Called on exit: kill the core and give the system proxy back. */
+    /** Called on exit: kill the core, remove the TUN adapter and give the system proxy back. */
     fun shutdownNow() {
         try {
             monitors?.cancel()
+            Tun.stop()
             proc?.destroy()
             proc = null
         } catch (e: Exception) {

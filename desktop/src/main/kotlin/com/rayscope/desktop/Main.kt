@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.window.WindowDraggableArea
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
@@ -108,6 +109,16 @@ object SingleInstance {
     private const val PORT = 48791
     private var server: ServerSocket? = null
 
+    /** Lets a new copy (RayScope restarted as administrator) take over. */
+    fun release() {
+        try {
+            server?.close()
+        } catch (e: Exception) {
+            // ignore
+        }
+        server = null
+    }
+
     /** true if this is the first copy */
     fun acquire(): Boolean {
         val s = try {
@@ -151,9 +162,28 @@ object SingleInstance {
     }
 }
 
-/** Dark or light Windows title bar matching the app theme (Windows 10 2004+ / 11). */
+/** Windows frame details: dark or light title bar, rounded corners and border of the frameless window. */
 object WinChrome {
     private val windows = System.getProperty("os.name", "").lowercase().contains("win")
+
+    private fun bgr(c: Color): Int {
+        val argb = c.toArgb()
+        return ((argb and 0xFF) shl 16) or (argb and 0xFF00) or ((argb shr 16) and 0xFF)
+    }
+
+    /** Windows 11 rounds the corners of the frameless window and draws a thin border; Windows 10 ignores both. */
+    fun frame(w: java.awt.Window, dark: Boolean, border: Color) {
+        if (!windows) return
+        try {
+            val hwnd = Native.getWindowPointer(w) ?: return
+            val fn = NativeLibrary.getInstance("dwmapi").getFunction("DwmSetWindowAttribute")
+            fn.invokeInt(arrayOf<Any>(hwnd, 20, IntByReference(if (dark) 1 else 0), 4))
+            fn.invokeInt(arrayOf<Any>(hwnd, 33, IntByReference(2), 4))
+            fn.invokeInt(arrayOf<Any>(hwnd, 34, IntByReference(bgr(border)), 4))
+        } catch (t: Throwable) {
+            Log.add("Рамка окна: " + t.message)
+        }
+    }
 
     fun apply(w: java.awt.Window, dark: Boolean, caption: Color) {
         if (!windows) return
@@ -173,8 +203,8 @@ object WinChrome {
 /** Compact window: the shapes are the window, there is no system frame (see App). */
 val WIN_SIZE = DpSize(392.dp, 700.dp)
 
-/** Room around the shapes inside the transparent window. */
-private val WIN_MARGIN = 6.dp
+/** Dark margin around the shapes: the same width as the gap around the connect tile. */
+private val WIN_MARGIN = 8.dp
 
 /** Connect tile 112 dp in the top-left corner, 8 dp gap, 28 dp corners. */
 private val NOTCH = NotchSpec(tile = 112.dp, gap = 8.dp, tileRadius = 28.dp, radius = 28.dp, cusp = 14.dp)
@@ -186,10 +216,12 @@ fun main(args: Array<String>) {
     Log.add("RayScope $APP_VERSION для ПК. Данные: ${Paths.data.absolutePath}")
     if (Paths.xray() == null) Log.add("Ядро xray не найдено в ${Paths.home.absolutePath}")
     Runtime.getRuntime().addShutdownHook(Thread { Engine.shutdownNow() })
+    // --connect comes from the restart as administrator for TUN
+    val connectNow = args.contains("--connect")
     Actions.go {
         SystemProxy.cleanupStale()
         val p = Store.prefs.value
-        if (p.connectOnLaunch && Store.selected() != null) Engine.connect()
+        if ((p.connectOnLaunch || connectNow) && Store.selected() != null) Engine.connect()
         if (p.autoUpdateSubs && Store.subs.value.isNotEmpty()) Actions.updateAllSubs(silent = true)
         if (p.testOnLaunch && Store.servers.value.isNotEmpty()) Actions.testAll()
     }
@@ -242,8 +274,8 @@ fun main(args: Array<String>) {
             title = "RayScope",
             icon = icon,
             state = winState,
+            // no system frame; an opaque window, so Windows has nothing to show through around the shapes
             undecorated = true,
-            transparent = true,
             resizable = false,
             onPreviewKeyEvent = { e ->
                 if (e.type != KeyEventType.KeyDown || !e.isCtrlPressed) {
@@ -330,7 +362,17 @@ fun App(
             }
         }
         val tab = TABS.indexOfFirst { it.first == page }.let { if (it < 0) TABS.lastIndex else it }
-        Box(Modifier.fillMaxSize().padding(WIN_MARGIN)) {
+        val askAdmin by Modes.askAdmin.collectAsState()
+        LaunchedEffect(p.dark) {
+            // started hidden in the tray: Windows creates the window only when it is first shown
+            while (!win.window.isDisplayable) delay(250)
+            delay(30)
+            WinChrome.frame(win.window, p.dark, if (p.dark) Color(0xFF26282E) else Color(0xFFCFCFCB))
+        }
+        if (askAdmin) {
+            AdminDialog(onRestart = { Actions.go { Modes.restartElevated() } }, onDismiss = { Modes.askAdmin.value = false })
+        }
+        Box(Modifier.fillMaxSize().background(p.bg).padding(WIN_MARGIN)) {
             NotchFrame(
                 spec = NOTCH,
                 panel = p.side,
@@ -442,7 +484,7 @@ private fun Shoulder(st: Status, sel: Server?, onMinimize: () -> Unit, onClose: 
     }
     val sub = when {
         err -> st.error
-        connected -> listOf(ipPart, Fmt.duration(now - st.since)).filter { it.isNotEmpty() }.joinToString("  ·  ")
+        connected -> listOf(if (st.tun) "TUN" else "", ipPart, Fmt.duration(now - st.since)).filter { it.isNotEmpty() }.joinToString("  ·  ")
         st.state == ConnState.CONNECTING -> st.serverName.ifEmpty { sel?.cleanName().orEmpty() }
         realIp != null -> "Ваш IP " + realIp.ip
         sel == null -> "Добавьте сервер во вкладке «Серверы»"
@@ -467,6 +509,27 @@ private fun Shoulder(st: Status, sel: Server?, onMinimize: () -> Unit, onClose: 
         Spacer(Modifier.height(2.dp))
         Text(sub, color = if (err) Bad else p.hint, fontSize = 12.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, style = TNum)
     }
+}
+
+/** TUN needs administrator rights: explain and offer the restart. */
+@Composable
+private fun AdminDialog(onRestart: () -> Unit, onDismiss: () -> Unit) {
+    val p = pal
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { Btn("Перезапустить", onRestart, primary = true, icon = Ico.Shield) },
+        dismissButton = { Btn("Отмена", onDismiss, color = p.hint) },
+        title = { Text("Режим TUN", color = p.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
+        text = {
+            Text(
+                "TUN пускает через VPN весь трафик компьютера, включая игры и Telegram. Для этого Windows нужно " +
+                    "разрешение администратора: RayScope перезапустится и спросит его.",
+                color = p.hint, fontSize = 13.5.sp, lineHeight = 19.sp
+            )
+        },
+        containerColor = p.surface,
+        shape = RoundedCornerShape(16.dp),
+    )
 }
 
 // ------------------------------------------------------------------ command menu
@@ -513,8 +576,9 @@ private fun CommandMenu(onPage: (Page) -> Unit, onClose: () -> Unit) {
             onPage(Page.CHECK)
             Actions.go { IpCheck.run() }
         },
-        Command("Системный прокси", "режим", Ico.Globe) { Engine.setMode(1) },
-        Command("Только локальный прокси", "режим", Ico.Link) { Engine.setMode(0) },
+        Command("Системный прокси", "режим", Ico.Globe) { Modes.request(Mode.SYSTEM) },
+        Command("TUN: весь трафик", "режим", Ico.Shield) { Modes.request(Mode.TUN) },
+        Command("Только локальный прокси", "режим", Ico.Link) { Modes.request(Mode.LOCAL) },
         Command("Главная", "Ctrl 1", Ico.Home) { onPage(Page.HOME) },
         Command("Серверы", "Ctrl 2", Ico.Servers) { onPage(Page.SERVERS) },
         Command("Проверка", "Ctrl 3", Ico.Radar) { onPage(Page.CHECK) },

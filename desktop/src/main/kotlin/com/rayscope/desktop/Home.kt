@@ -20,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -208,7 +207,7 @@ private fun MiniChart(values: List<Float>, color: Color, modifier: Modifier) {
             lineTo(pts.first().x, size.height)
             close()
         }
-        drawPath(area, Brush.verticalGradient(listOf(color.copy(alpha = 0.16f), color.copy(alpha = 0f))))
+        drawPath(area, color.copy(alpha = 0.10f))
         drawPath(smoothPath(pts, 0f, size.height), color, style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
     }
 }
@@ -225,21 +224,43 @@ private fun ModeCard(st: Status, prefs: Prefs) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Режим", color = p.text, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
             if (st.systemProxy) Tag("прокси Windows", Good)
+            if (st.tun) Tag("TUN", Good)
         }
         Spacer(Modifier.height(10.dp))
         Segmented(
-            listOf("Системный", "Локальный"),
-            selected = if (prefs.mode == 1) 0 else 1,
-            onSelect = { Engine.setMode(if (it == 0) 1 else 0) },
+            listOf("Системный", "TUN", "Локальный"),
+            selected = when (prefs.mode) {
+                Mode.SYSTEM -> 0
+                Mode.TUN -> 1
+                else -> 2
+            },
+            onSelect = {
+                Modes.request(
+                    when (it) {
+                        0 -> Mode.SYSTEM
+                        1 -> Mode.TUN
+                        else -> Mode.LOCAL
+                    }
+                )
+            },
             modifier = Modifier.padding(horizontal = 14.dp),
             accent = true
         )
         Text(
-            if (prefs.mode == 1) "Браузеры и программы идут через RayScope. Telegram и игры: SOCKS5."
-            else "Пропишите адрес ниже в настройках прокси нужной программы.",
+            when (prefs.mode) {
+                Mode.SYSTEM -> "Браузеры и программы идут через RayScope. Telegram и игры: SOCKS5 или TUN."
+                Mode.TUN -> "Весь трафик компьютера идёт через VPN, включая игры и Telegram. Нужны права администратора."
+                else -> "Пропишите адрес ниже в настройках прокси нужной программы."
+            },
             color = p.hint, fontSize = 12.sp, lineHeight = 17.sp,
             modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 2.dp)
         )
+        if (prefs.mode == Mode.TUN && !Elevation.isAdmin) {
+            Btn(
+                "Перезапустить от администратора", { Modes.askAdmin.value = true },
+                Modifier.padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 4.dp), icon = Ico.Shield
+            )
+        }
         CopyRow("HTTP", "127.0.0.1:$http")
         CopyRow("SOCKS5", "127.0.0.1:$socks")
     }

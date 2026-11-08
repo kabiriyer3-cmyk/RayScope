@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RayScope for Windows: Compose Desktop app + Xray-core + Temurin JRE.
+# RayScope for Windows: Compose Desktop app + Xray-core + sing-box (TUN mode) + Temurin JRE.
 # Produces dist/RayScope-Setup-NAME.exe (installer) and dist/RayScope-NAME-windows-x64-portable.zip.
 # Called from ci/build.sh with the path to gradle as the first argument.
 set -euo pipefail
@@ -48,6 +48,21 @@ if ! gh release download --repo XTLS/Xray-core --pattern 'Xray-windows-64.zip' -
 fi
 ls -la "$D"
 
+step "Desktop: sing-box for TUN mode"
+SB_VERSION="${SB_VERSION:-1.13.12}"
+SB_ZIP="sing-box-${SB_VERSION}-windows-amd64.zip"
+if ! gh release download "v${SB_VERSION}" --repo SagerNet/sing-box --pattern "$SB_ZIP" --dir "$D"; then
+  echo "gh download failed, trying direct link"
+  curl -fsSL --retry 3 -o "$D/$SB_ZIP" "https://github.com/SagerNet/sing-box/releases/download/v${SB_VERSION}/${SB_ZIP}"
+fi
+rm -rf "$D/sb"
+mkdir -p "$D/sb"
+unzip -q "$D/$SB_ZIP" -d "$D/sb"
+SB_EXE="$(find "$D/sb" -type f -iname 'sing-box.exe' | head -n 1)"
+test -n "$SB_EXE"
+SB_DIR="$(dirname "$SB_EXE")"
+ls -la "$SB_DIR"
+
 step "Desktop: Java runtime for Windows"
 curl -fsSL --retry 3 -o "$D/jre.zip" "https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jre/hotspot/normal/eclipse"
 ls -la "$D/jre.zip"
@@ -67,6 +82,10 @@ step "Desktop: assemble"
 APP="$D/RayScope"
 mkdir -p "$APP/core" "$APP/runtime" "$D/jre"
 unzip -q "$D/Xray-windows-64.zip" -d "$APP/core"
+cp "$SB_EXE" "$APP/core/sing-box.exe"
+# libraries shipped next to sing-box.exe (if any), and its licence under its own name
+find "$SB_DIR" -maxdepth 1 -type f -iname '*.dll' -exec cp {} "$APP/core/" \;
+if [ -f "$SB_DIR/LICENSE" ]; then cp "$SB_DIR/LICENSE" "$APP/core/LICENSE-sing-box.txt"; fi
 unzip -q "$D/jre.zip" -d "$D/jre"
 JRE_DIR="$(find "$D/jre" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
 cp -r "$JRE_DIR"/. "$APP/runtime/"
@@ -75,6 +94,7 @@ cp "$L/RayScope.exe" "$APP/RayScope.exe"
 echo "$NAME" > "$APP/version.txt"
 test -f "$APP/runtime/bin/javaw.exe"
 test -f "$APP/core/xray.exe"
+test -f "$APP/core/sing-box.exe"
 test -f "$APP/RayScope.exe"
 
 cat > "$APP/README.txt" <<'EOF'
@@ -88,6 +108,8 @@ RayScope для Windows
 
 По умолчанию включается системный прокси Windows: браузеры и большинство программ идут через VPN.
 В режиме «Только локальный прокси» укажите в программах HTTP 127.0.0.1:10809 или SOCKS5 127.0.0.1:10808.
+Режим TUN пускает через VPN весь трафик компьютера, включая игры. Для него RayScope попросит права
+администратора и перезапустится. TUN работает на sing-box (GPL-3.0, github.com/SagerNet/sing-box), лицензия в core.
 
 Ядро Xray лежит в папке core, Java в папке runtime, настройки в %APPDATA%/RayScope.
 При закрытии окна программа сворачивается в трей (меняется в настройках).
