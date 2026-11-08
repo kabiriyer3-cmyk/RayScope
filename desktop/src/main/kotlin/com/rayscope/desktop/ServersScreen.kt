@@ -9,9 +9,9 @@ import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -148,11 +148,16 @@ fun ServersScreen() {
             }
 
             if (subs.isNotEmpty()) {
+                val subScroll = rememberScrollState()
                 Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 14.dp),
+                    Modifier.fillMaxWidth().mouseSideways(subScroll).horizontalScroll(subScroll),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     subs.forEach { sub -> SubCard(sub, servers.count { it.subId == sub.id }, updating) }
+                }
+                // the gap under the cards is the scrollbar track, so nothing below moves when it shows up
+                Box(Modifier.fillMaxWidth().height(14.dp), contentAlignment = Alignment.Center) {
+                    RowScrollbar(subScroll)
                 }
             }
 
@@ -174,8 +179,9 @@ fun ServersScreen() {
                         }
                     }
                 }
+                val chipScroll = rememberScrollState()
                 Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 12.dp),
+                    Modifier.fillMaxWidth().mouseSideways(chipScroll).horizontalScroll(chipScroll).padding(bottom = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     FILTERS.forEachIndexed { i, f ->
@@ -185,27 +191,32 @@ fun ServersScreen() {
                 if (shown.isEmpty()) {
                     Text("Ничего не найдено", color = p.hint, fontSize = 14.sp, modifier = Modifier.padding(top = 30.dp).fillMaxWidth(), textAlign = TextAlign.Center)
                 } else {
-                    LazyColumn(
-                        Modifier.weight(1f).fillMaxWidth(),
-                        contentPadding = PaddingValues(bottom = TAB_SPACE),
-                        verticalArrangement = Arrangement.spacedBy(if (prefs.compact) 4.dp else 8.dp)
-                    ) {
-                        items(shown, key = { it.id }) { s ->
-                            val here = st.serverId == s.id
-                            ServerRow(
-                                s = s,
-                                selected = s.id == effSel,
-                                live = here && st.state == ConnState.CONNECTED,
-                                connecting = here && st.state == ConnState.CONNECTING,
-                                compact = prefs.compact,
-                                dev = prefs.dev,
-                                testingAll = testing,
-                                onClick = {
-                                    pickServer(s.id)
-                                    openId = s.id
-                                }
-                            )
+                    val listState = rememberLazyListState()
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        LazyColumn(
+                            Modifier.fillMaxSize(),
+                            state = listState,
+                            contentPadding = PaddingValues(bottom = TAB_SPACE),
+                            verticalArrangement = Arrangement.spacedBy(if (prefs.compact) 4.dp else 8.dp)
+                        ) {
+                            items(shown, key = { it.id }) { s ->
+                                val here = st.serverId == s.id
+                                ServerRow(
+                                    s = s,
+                                    selected = s.id == effSel,
+                                    live = here && st.state == ConnState.CONNECTED,
+                                    connecting = here && st.state == ConnState.CONNECTING,
+                                    compact = prefs.compact,
+                                    dev = prefs.dev,
+                                    testingAll = testing,
+                                    onClick = {
+                                        pickServer(s.id)
+                                        openId = s.id
+                                    }
+                                )
+                            }
                         }
+                        ListScrollbar(listState)
                     }
                 }
             }
@@ -463,9 +474,8 @@ private fun DetailPanel(s: Server, subs: List<Subscription>, dev: Boolean, st: S
     var confirm by remember(s.id) { mutableStateOf(false) }
     var testing by remember(s.id) { mutableStateOf(false) }
     val live = st.serverId == s.id && st.state != ConnState.STOPPED
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(start = PAGE_PAD, end = PAGE_PAD, top = PAGE_TOP, bottom = TAB_SPACE),
+    ScrollColumn(
+        PaddingValues(start = PAGE_PAD, end = PAGE_PAD, top = PAGE_TOP, bottom = TAB_SPACE),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
