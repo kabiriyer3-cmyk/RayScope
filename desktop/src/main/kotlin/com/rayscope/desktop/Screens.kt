@@ -402,9 +402,22 @@ fun SettingsScreen(onOpenLog: () -> Unit) {
 
             Section("Подключение") {
                 ChoiceRow(
-                    "Режим", listOf("Системный прокси Windows", "Только локальный прокси"), if (prefs.mode == 1) 0 else 1,
-                    "Системный прокси направит браузеры и большинство программ через RayScope"
-                ) { Engine.setMode(if (it == 0) 1 else 0) }
+                    "Режим", listOf("Системный прокси Windows", "TUN: весь трафик", "Только локальный прокси"),
+                    when (prefs.mode) {
+                        Mode.SYSTEM -> 0
+                        Mode.TUN -> 1
+                        else -> 2
+                    },
+                    "Системный прокси направит через RayScope браузеры и большинство программ. TUN заберёт весь трафик компьютера, включая игры, и попросит права администратора"
+                ) {
+                    Modes.request(
+                        when (it) {
+                            0 -> Mode.SYSTEM
+                            1 -> Mode.TUN
+                            else -> Mode.LOCAL
+                        }
+                    )
+                }
                 Line()
                 PortRow("HTTP-порт", prefs.httpPort) { v -> setCore { it.copy(httpPort = v) } }
                 Line()

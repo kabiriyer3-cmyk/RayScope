@@ -113,7 +113,7 @@ fun IpCheckScreen() {
                     AnimatedContent(
                         targetState = v.kind,
                         transitionSpec = {
-                            (scaleIn(spring(dampingRatio = 0.5f, stiffness = 400f), initialScale = 0.5f) + fadeIn(tween(150))) togetherWith
+                            (scaleIn(spring(dampingRatio = 1f, stiffness = 400f), initialScale = 0.85f) + fadeIn(tween(150))) togetherWith
                                 (scaleOut(tween(140), targetScale = 0.6f) + fadeOut(tween(120)))
                         },
                         label = "verdictIcon"
