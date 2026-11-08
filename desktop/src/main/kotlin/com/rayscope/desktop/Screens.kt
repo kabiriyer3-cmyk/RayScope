@@ -448,6 +448,15 @@ fun SettingsScreen(onOpenLog: () -> Unit) {
             }
 
             Section("Пинг и проверка") {
+                ChoiceRow(
+                    "Способ пинга", Tester.KIND_NAMES, prefs.pingMode.coerceIn(0, 2),
+                    when (prefs.pingMode) {
+                        1 -> "Время TCP-рукопожатия с портом сервера: мгновенно, но «отвечает» значит только «порт открыт»"
+                        2 -> "Обычный ping до адреса сервера. Многие серверы на ICMP не отвечают, хотя работают"
+                        else -> "Полный запрос через ядро Xray: честная задержка, сервер точно пропускает трафик"
+                    }
+                ) { i -> Store.setPrefs { it.copy(pingMode = i) } }
+                Line()
                 val urlIdx = Tester.TEST_URLS.indexOfFirst { it.second == prefs.testUrl }
                 val custom = customUrl || urlIdx < 0
                 ChoiceRow(
