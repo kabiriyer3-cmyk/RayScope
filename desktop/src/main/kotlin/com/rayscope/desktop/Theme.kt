@@ -69,12 +69,13 @@ import com.rayscope.fluid.Fluid
 import com.rayscope.fluid.FluidSlider
 import com.rayscope.fluid.Glyphs
 import com.rayscope.fluid.GooeyToggle
-import com.rayscope.fluid.Lettermark
-import com.rayscope.fluid.Mark
+import com.rayscope.fluid.LogoMark
+import com.rayscope.fluid.MinusGlyph
+import com.rayscope.fluid.RayLogo
 import com.rayscope.fluid.fluidSpan
 import kotlin.math.roundToInt
 
-// ------------------------------------------------------------------ palette: deep navy, accent flowing into a second hue (same as Android)
+// ------------------------------------------------------------------ palette: graphite, one flat accent (same as Android)
 
 val Good = Color(0xFF3DDC97)
 val Mid = Color(0xFFF5B83D)
@@ -89,7 +90,7 @@ val Pink = Color(0xFFF472B6)
 val Gray = Color(0xFF8C94A8)
 val Yellow = Color(0xFFFBBF24)
 val Cyan = Color(0xFF4FD6FF)
-val InkOn = Color(0xFF0A0C12)
+val InkOn = Color(0xFF0F1115)
 
 val TNum = TextStyle(fontFeatureSettings = "tnum")
 
@@ -108,46 +109,47 @@ data class Pal(
     val onAccent: Color,
     /** row highlight under the mouse */
     val hover: Color,
-    /** second hue of the accent gradient */
+    /** same as accent: kept so older call sites compile */
     val accent2: Color = accent,
+    /** connect tile while disconnected */
+    val tileIdle: Color = raised,
 ) {
-    /** Primary fill: the accent flowing into its second hue. */
-    val accentBrush: Brush get() = Brush.linearGradient(listOf(accent, accent2))
+    /** Primary fill. Flat on purpose: no gradients anywhere. */
+    val accentBrush: Brush get() = SolidColor(accent)
 }
 
-val ACCENT_NAMES = listOf("Индиго", "Синий", "Графит", "Зелёный", "Янтарь", "Красный", "Фиалка", "Бирюза")
-private val ACCENTS_DARK = listOf(0xFF7C8CFF, 0xFF3D8BFF, 0xFFE6E8EE, 0xFF34D399, 0xFFFBBF24, 0xFFF87171, 0xFFA78BFA, 0xFF2DD4BF).map { Color(it) }
-private val ACCENTS2_DARK = listOf(0xFF4FD6FF, 0xFF22D3EE, 0xFF9AA3B5, 0xFF22D3EE, 0xFFFB7185, 0xFFFB923C, 0xFFF472B6, 0xFF60A5FA).map { Color(it) }
-private val ACCENTS_LIGHT = listOf(0xFF4F5BD5, 0xFF1F6FEB, 0xFF1A1D26, 0xFF059669, 0xFFB45309, 0xFFDC2626, 0xFF7C3AED, 0xFF0D9488).map { Color(it) }
-private val ACCENTS2_LIGHT = listOf(0xFF0891B2, 0xFF0891B2, 0xFF4B5563, 0xFF0891B2, 0xFFDB2777, 0xFFEA580C, 0xFFDB2777, 0xFF2563EB).map { Color(it) }
+val ACCENT_NAMES = listOf("Графит", "Индиго", "Синий", "Зелёный", "Янтарь", "Красный", "Фиалка", "Бирюза")
+private val ACCENTS_DARK = listOf(0xFFE9EAED, 0xFF7C8CFF, 0xFF3D8BFF, 0xFF34D399, 0xFFFBBF24, 0xFFF87171, 0xFFA78BFA, 0xFF2DD4BF).map { Color(it) }
+private val ACCENTS_LIGHT = listOf(0xFF15171C, 0xFF4F5BD5, 0xFF1F6FEB, 0xFF059669, 0xFFB45309, 0xFFDC2626, 0xFF7C3AED, 0xFF0D9488).map { Color(it) }
 
 fun accentColor(i: Int, dark: Boolean): Color {
     val l = if (dark) ACCENTS_DARK else ACCENTS_LIGHT
     return l.getOrElse(i) { l[0] }
 }
 
-fun accentColor2(i: Int, dark: Boolean): Color {
-    val l = if (dark) ACCENTS2_DARK else ACCENTS2_LIGHT
-    return l.getOrElse(i) { l[0] }
-}
+/** Kept for callers of the old two-hue accent: there are no gradients any more, so it is the accent itself. */
+fun accentColor2(i: Int, dark: Boolean): Color = accentColor(i, dark)
 
+/**
+ * Graphite surfaces. side: the window panel; surface: cards on it; raised: controls on cards.
+ * tileIdle: the connect tile while the tunnel is down.
+ */
 fun palette(dark: Boolean, accentIndex: Int): Pal {
     val a = accentColor(accentIndex, dark)
-    val a2 = accentColor2(accentIndex, dark)
     val on = if (a.luminance() > 0.5f) InkOn else Color.White
     return if (dark) {
         Pal(
-            dark = true, bg = Color(0xFF0A0C12), side = Color(0xFF0D1017), surface = Color(0xFF11141C),
-            raised = Color(0xFF171B25), stroke = Color.White.copy(alpha = 0.07f), text = Color(0xFFEEF1F8),
-            hint = Color(0xFF8C94A8), faint = Color.White.copy(alpha = 0.08f), accent = a, onAccent = on,
-            hover = Color.White.copy(alpha = 0.05f), accent2 = a2
+            dark = true, bg = Color(0xFF0A0B0D), side = Color(0xFF111216), surface = Color(0xFF191B20),
+            raised = Color(0xFF23252B), stroke = Color.White.copy(alpha = 0.07f), text = Color(0xFFF2F3F5),
+            hint = Color(0xFF8B909A), faint = Color.White.copy(alpha = 0.08f), accent = a, onAccent = on,
+            hover = Color.White.copy(alpha = 0.05f), accent2 = a, tileIdle = Color(0xFF25272D)
         )
     } else {
         Pal(
-            dark = false, bg = Color(0xFFF4F5F9), side = Color(0xFFEDEFF4), surface = Color.White,
-            raised = Color(0xFFEEF0F5), stroke = Color.Black.copy(alpha = 0.08f), text = Color(0xFF0F1320),
-            hint = Color(0xFF5E6678), faint = Color.Black.copy(alpha = 0.07f), accent = a, onAccent = on,
-            hover = Color.Black.copy(alpha = 0.045f), accent2 = a2
+            dark = false, bg = Color(0xFFF1F1EF), side = Color(0xFFE9E9E6), surface = Color.White,
+            raised = Color(0xFFF1F1EF), stroke = Color.Black.copy(alpha = 0.08f), text = Color(0xFF111215),
+            hint = Color(0xFF5F646D), faint = Color.Black.copy(alpha = 0.07f), accent = a, onAccent = on,
+            hover = Color.Black.copy(alpha = 0.045f), accent2 = a, tileIdle = Color(0xFFD9D9D5)
         )
     }
 }
@@ -191,22 +193,21 @@ fun RayTheme(theme: Int, accent: Int, content: @Composable () -> Unit) {
 
 // ------------------------------------------------------------------ the lettermark
 
-/** The R lettermark: [ink] body, gradient ray (or a flat [ray] colour). */
+/** The R lettermark, one continuous line in one colour. */
 @Composable
-fun RayMark(modifier: Modifier = Modifier, ink: Color = pal.text, ray: Color = Color.Unspecified) {
-    if (ray == Color.Unspecified) Lettermark(modifier, ink) else Lettermark(modifier, ink, ray, ray)
+fun RayMark(modifier: Modifier = Modifier, ink: Color = pal.text) {
+    LogoMark(modifier, ink)
 }
 
-/** Window and tray icon: navy tile with the lettermark, same artwork as RayScope.exe. */
+/** Window, taskbar and tray icon: graphite tile with the white lettermark (small optical cut), same as RayScope.exe. */
 private fun appIcon(): ImageVector {
     val b = ImageVector.Builder(name = "app", defaultWidth = 32.dp, defaultHeight = 32.dp, viewportWidth = 100f, viewportHeight = 100f)
     b.addPath(
         PathParser().parsePathString("M25 3H75A22 22 0 0 1 97 25V75A22 22 0 0 1 75 97H25A22 22 0 0 1 3 75V25A22 22 0 0 1 25 3Z").toNodes(),
-        fill = Brush.linearGradient(listOf(Mark.TILE_FROM, Mark.TILE_TO), start = Offset(3f, 3f), end = Offset(97f, 97f))
+        fill = SolidColor(RayLogo.TILE)
     )
-    b.addGroup(name = "mark", pivotX = 50f, pivotY = 50f, scaleX = 0.66f, scaleY = 0.66f, translationX = -0.66f)
-    b.addPath(PathParser().parsePathString(Mark.BODY + Mark.COUNTER).toNodes(), pathFillType = PathFillType.EvenOdd, fill = SolidColor(Mark.INK))
-    b.addPath(PathParser().parsePathString(Mark.RAY).toNodes(), fill = Mark.rayBrush())
+    b.addGroup(name = "mark", pivotX = 50f, pivotY = 50f, scaleX = 0.7f, scaleY = 0.7f)
+    b.addPath(PathParser().parsePathString(RayLogo.PATH_SMALL).toNodes(), fill = SolidColor(RayLogo.INK))
     b.clearGroup()
     return b.build()
 }
@@ -280,22 +281,22 @@ object Ico {
     val Target get() = Glyphs.Target
     val Folder get() = Glyphs.Folder
     val Arrow get() = Glyphs.Arrow
+    val Minus get() = MinusGlyph
 }
 
 // ------------------------------------------------------------------ helpers
 
+/** Side and top padding of every page inside the panel. */
+val PAGE_PAD = 14.dp
+val PAGE_TOP = 6.dp
+
 /** Screens ask for radii on the 12-20 dp scale; the fluid look keeps them generous. */
 fun soft(radius: Dp): RoundedCornerShape = RoundedCornerShape((radius * 0.8f).coerceIn(8.dp, 18.dp))
 
-/** Surface card. In the dark theme its hairline is lit from the top. */
+/** Surface card with a flat hairline. */
 fun Modifier.card(p: Pal, radius: Dp = 18.dp, stroke: Color = p.stroke, width: Dp = 1.dp): Modifier {
     val s = soft(radius)
-    val edge: Brush = if (p.dark && stroke == p.stroke) {
-        Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.11f), Color.White.copy(alpha = 0.035f)))
-    } else {
-        SolidColor(stroke)
-    }
-    return this.clip(s).background(p.surface).border(width, edge, s)
+    return this.clip(s).background(p.surface).border(width, stroke, s)
 }
 
 fun Modifier.hand(): Modifier = this.pointerHoverIcon(PointerIcon.Hand)
@@ -398,12 +399,12 @@ fun DevTag() {
 @Composable
 fun Header(title: String, subtitle: String? = null, trailing: @Composable RowScope.() -> Unit = {}) {
     val p = pal
-    Row(Modifier.fillMaxWidth().padding(bottom = 22.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(title, color = p.text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.5).sp, maxLines = 1)
+            Text(title, color = p.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.4).sp, maxLines = 1)
             if (subtitle != null) {
-                Spacer(Modifier.height(2.dp))
-                Text(subtitle, color = p.hint, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(1.dp))
+                Text(subtitle, color = p.hint, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         trailing()
@@ -599,8 +600,10 @@ fun RChip(text: String, selected: Boolean, count: Int? = null, icon: ImageVector
 fun Toggle(checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     val p = pal
     GooeyToggle(
-        checked = checked, onChange = onChange, on = p.accent, on2 = p.accent2,
-        off = if (p.dark) Color(0xFF262C3A) else Color(0xFFD3D8E2), enabled = enabled
+        checked = checked, onChange = onChange, on = p.accent, on2 = p.accent,
+        off = if (p.dark) Color(0xFF2C2E35) else Color(0xFFD6D6D2), enabled = enabled,
+        // a light accent (graphite in the dark theme) needs a dark thumb to stay visible
+        thumb = if (checked && p.accent.luminance() > 0.6f) p.onAccent else Color.White
     )
 }
 
@@ -614,7 +617,7 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, mod
     val n = options.size.coerceAtLeast(1)
     val span = fluidSpan(selected.toFloat(), selected + 1f)
     val shape = RoundedCornerShape(50)
-    val pill = if (p.dark) Color(0xFF262C3A) else Color.White
+    val pill = if (p.dark) Color(0xFF30333A) else Color.White
     val brush = p.accentBrush
     val shadow = Color.Black.copy(alpha = if (p.dark) 0.28f else 0.08f)
     Row(
