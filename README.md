@@ -4,7 +4,6 @@
 
 <p align="center">
   <a href="https://github.com/kabiriyer3-cmyk/RayScope/releases/latest"><img alt="Последняя версия" src="https://img.shields.io/github/v/release/kabiriyer3-cmyk/RayScope?style=flat-square&label=%D0%B2%D0%B5%D1%80%D1%81%D0%B8%D1%8F&color=2b2e35"></a>
-  <a href="https://github.com/kabiriyer3-cmyk/RayScope/releases"><img alt="Скачивания" src="https://img.shields.io/github/downloads/kabiriyer3-cmyk/RayScope/total?style=flat-square&label=%D1%81%D0%BA%D0%B0%D1%87%D0%B8%D0%B2%D0%B0%D0%BD%D0%B8%D0%B9&color=2b2e35"></a>
   <img alt="Android 7.0 и новее" src="https://img.shields.io/badge/Android-7.0%2B-2b2e35?style=flat-square">
   <img alt="Windows 10 и 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-2b2e35?style=flat-square">
   <a href="https://github.com/XTLS/Xray-core"><img alt="Ядро Xray" src="https://img.shields.io/badge/%D1%8F%D0%B4%D1%80%D0%BE-Xray-2b2e35?style=flat-square"></a>
