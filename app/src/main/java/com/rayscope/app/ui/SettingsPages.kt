@@ -24,7 +24,8 @@ enum class SetPage(val title: String, val subtitle: String) {
     PROXY("Локальный прокси", "SOCKS5 / HTTP на телефоне"),
     SPLIT("Раздельное туннелирование", "Какие приложения идут через VPN"),
     SUBS("Подписки", "Обновление и User-Agent"),
-    LOOK("Оформление", "Тема, акцент, стекло, форма и виджеты"),
+    LOOK("Оформление", "Тема, акцент, форма, навигация и виджеты"),
+    BACKUP("Резервная копия", "Перенос настроек на другой телефон и сброс"),
     DEV("Режим разработчика", "Технические детали, журнал и инструменты"),
 }
 
@@ -46,6 +47,7 @@ fun SettingsPageScreen(page: SetPage, onBack: () -> Unit, onOpen: (Route) -> Uni
                 SetPage.SPLIT -> SplitPrefs(onOpen)
                 SetPage.SUBS -> SubsPrefs(onOpen)
                 SetPage.LOOK -> LookPrefs()
+                SetPage.BACKUP -> BackupPrefs()
                 SetPage.DEV -> DevPrefs(onOpen)
             }
             Spacer(Modifier.navigationBarsPadding().height(32.dp))
@@ -227,7 +229,7 @@ private fun PingPrefs() {
                 mode = it
                 st.pingMode = it
             },
-            modifier = Modifier.padding(14.dp)
+            modifier = Modifier.padding(12.dp)
         )
     }
 
@@ -376,7 +378,7 @@ private fun DnsPrefs() {
         }
         PrefRow(null, Blue, "Быстрый выбор", divider = false)
         FlowRow(
-            Modifier.fillMaxWidth().padding(start = 16.dp, end = 14.dp, bottom = 14.dp),
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
@@ -628,9 +630,9 @@ private fun SplitPrefs(onOpen: (Route) -> Unit) {
                 mode = it
                 st.perAppMode = it
             },
-            modifier = Modifier.padding(14.dp)
+            modifier = Modifier.padding(12.dp)
         )
-        Hairline()
+        Hairline(0.dp)
         PrefRow(
             RayIcons.Apps, Pink, "Выбрать приложения", value = "${st.perAppSet.size}",
             chevron = true, enabled = mode != 0, divider = false, onClick = { onOpen(Route.Apps) }
@@ -670,7 +672,7 @@ private fun SubsPrefs(onOpen: (Route) -> Unit) {
             st.userAgent = it.trim()
         }
         FlowRow(
-            Modifier.fillMaxWidth().padding(start = 62.dp, end = 14.dp, bottom = 14.dp),
+            Modifier.fillMaxWidth().padding(start = 48.dp, end = 16.dp, bottom = 14.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
@@ -683,8 +685,8 @@ private fun SubsPrefs(onOpen: (Route) -> Unit) {
         }
     }
     Text(
-        "Подписки обновляются напрямую, а если не вышло и VPN подключён — через туннель.",
+        "Подписки обновляются напрямую, а если не вышло и VPN подключён, через туннель.",
         color = ray.hint, fontSize = 12.sp,
-        modifier = Modifier.padding(horizontal = 22.dp, vertical = 4.dp)
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
     )
 }
