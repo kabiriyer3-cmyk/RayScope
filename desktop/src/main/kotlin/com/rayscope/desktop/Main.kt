@@ -162,28 +162,9 @@ object SingleInstance {
     }
 }
 
-/** Windows frame details: dark or light title bar, rounded corners and border of the frameless window. */
+/** Dark or light Windows title bar matching the app theme (Windows 10 2004+ / 11). */
 object WinChrome {
     private val windows = System.getProperty("os.name", "").lowercase().contains("win")
-
-    private fun bgr(c: Color): Int {
-        val argb = c.toArgb()
-        return ((argb and 0xFF) shl 16) or (argb and 0xFF00) or ((argb shr 16) and 0xFF)
-    }
-
-    /** Windows 11 rounds the corners of the frameless window and draws a thin border; Windows 10 ignores both. */
-    fun frame(w: java.awt.Window, dark: Boolean, border: Color) {
-        if (!windows) return
-        try {
-            val hwnd = Native.getWindowPointer(w) ?: return
-            val fn = NativeLibrary.getInstance("dwmapi").getFunction("DwmSetWindowAttribute")
-            fn.invokeInt(arrayOf<Any>(hwnd, 20, IntByReference(if (dark) 1 else 0), 4))
-            fn.invokeInt(arrayOf<Any>(hwnd, 33, IntByReference(2), 4))
-            fn.invokeInt(arrayOf<Any>(hwnd, 34, IntByReference(bgr(border)), 4))
-        } catch (t: Throwable) {
-            Log.add("Рамка окна: " + t.message)
-        }
-    }
 
     fun apply(w: java.awt.Window, dark: Boolean, caption: Color) {
         if (!windows) return
@@ -203,7 +184,7 @@ object WinChrome {
 /** Compact window: the shapes are the window, there is no system frame (see App). */
 val WIN_SIZE = DpSize(392.dp, 700.dp)
 
-/** Dark margin around the shapes: the same width as the gap around the connect tile. */
+/** Transparent room around the shapes, as wide as the gap: the light around the tile runs in it. */
 private val WIN_MARGIN = 8.dp
 
 /** Connect tile 112 dp in the top-left corner, 8 dp gap, 28 dp corners. */
@@ -274,8 +255,10 @@ fun main(args: Array<String>) {
             title = "RayScope",
             icon = icon,
             state = winState,
-            // no system frame; an opaque window, so Windows has nothing to show through around the shapes
+            // no system frame and no background: only the tile and the panel are visible, the desktop shows
+            // through everywhere else (the gap and the margin)
             undecorated = true,
+            transparent = true,
             resizable = false,
             onPreviewKeyEvent = { e ->
                 if (e.type != KeyEventType.KeyDown || !e.isCtrlPressed) {
@@ -295,6 +278,7 @@ fun main(args: Array<String>) {
                 }
             },
         ) {
+            LaunchedEffect(Unit) { Log.add("Отрисовка окна: " + window.renderApi) }
             LaunchedEffect(raise) {
                 if (raise > 0) {
                     winState.isMinimized = false
@@ -363,16 +347,10 @@ fun App(
         }
         val tab = TABS.indexOfFirst { it.first == page }.let { if (it < 0) TABS.lastIndex else it }
         val askAdmin by Modes.askAdmin.collectAsState()
-        LaunchedEffect(p.dark) {
-            // started hidden in the tray: Windows creates the window only when it is first shown
-            while (!win.window.isDisplayable) delay(250)
-            delay(30)
-            WinChrome.frame(win.window, p.dark, if (p.dark) Color(0xFF26282E) else Color(0xFFCFCFCB))
-        }
         if (askAdmin) {
             AdminDialog(onRestart = { Actions.go { Modes.restartElevated() } }, onDismiss = { Modes.askAdmin.value = false })
         }
-        Box(Modifier.fillMaxSize().background(p.bg).padding(WIN_MARGIN)) {
+        Box(Modifier.fillMaxSize().padding(WIN_MARGIN)) {
             NotchFrame(
                 spec = NOTCH,
                 panel = p.side,
