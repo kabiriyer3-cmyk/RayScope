@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rayscope.fluid.LiveIcon
 
 val SORT_NAMES = listOf("Как в подписке", "По пингу", "По имени", "По стабильности")
 private val FILTERS = listOf("Все", "Рабочие", "Нерабочие", "Не проверены", "Избранные")
@@ -94,7 +95,7 @@ fun ServersScreen() {
                 Spacer(Modifier.width(4.dp))
                 Btn(
                     "Пинг", { Actions.go { Actions.testAll() } }, primary = true, icon = Ico.Bolt,
-                    enabled = !testing && servers.isNotEmpty()
+                    enabled = !testing && servers.isNotEmpty(), busy = testing
                 )
                 Box {
                     IconBtn(Ico.More, "Ещё", { menu = true })
@@ -227,6 +228,8 @@ fun ServersScreen() {
 @Composable
 private fun MenuItem(text: String, icon: ImageVector, dev: Boolean = false, onClick: () -> Unit) {
     val p = pal
+    val src = remember { MutableInteractionSource() }
+    val hovered by src.collectIsHoveredAsState()
     DropdownMenuItem(
         text = {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -238,7 +241,8 @@ private fun MenuItem(text: String, icon: ImageVector, dev: Boolean = false, onCl
             }
         },
         onClick = onClick,
-        leadingIcon = { Icon(icon, contentDescription = null, tint = p.hint, modifier = Modifier.size(16.dp)) }
+        leadingIcon = { LiveIcon(icon, p.hint, Modifier.size(16.dp), hover = hovered) },
+        interactionSource = src,
     )
 }
 
@@ -250,7 +254,7 @@ private fun CheckItem(text: String, checked: Boolean, onClick: () -> Unit) {
         onClick = onClick,
         leadingIcon = {
             Box(Modifier.size(16.dp)) {
-                if (checked) Icon(Ico.Check, contentDescription = null, tint = p.accent, modifier = Modifier.size(16.dp))
+                if (checked) LiveIcon(Ico.Check, p.accent, Modifier.size(16.dp), appear = true)
             }
         }
     )
@@ -335,8 +339,7 @@ private fun ServerRow(
             contentAlignment = Alignment.CenterEnd
         ) {
             if (testingOne) {
-                val r = spin()
-                Icon(Ico.Refresh, contentDescription = null, tint = p.hint, modifier = Modifier.size(16.dp).spinning(r))
+                LiveIcon(Ico.Refresh, p.hint, Modifier.size(16.dp), busy = true)
             } else {
                 LatencyText(s.delay, if (compact) 13.sp else 14.sp)
             }
@@ -362,7 +365,7 @@ private fun SubCard(sub: Subscription, count: Int, updating: Boolean) {
                 Text(sub.name.ifEmpty { "Подписка" }, color = p.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("$count серв. · " + Fmt.ago(sub.lastUpdated), color = p.hint, fontSize = 12.sp, maxLines = 1)
             }
-            IconBtn(Ico.Refresh, "Обновить", { Actions.go { Actions.updateSub(sub, silent = false) } }, enabled = !updating, size = 30.dp)
+            IconBtn(Ico.Refresh, "Обновить", { Actions.go { Actions.updateSub(sub, silent = false) } }, enabled = !updating, size = 30.dp, busy = updating)
             IconBtn(Ico.Trash, "Удалить", { ask = true }, size = 30.dp)
         }
         if (sub.total > 0) {
@@ -481,7 +484,7 @@ private fun DetailPanel(s: Server, subs: List<Subscription>, dev: Boolean, st: S
                         }
                     }
                 },
-                Modifier.weight(1f), icon = Ico.Activity, enabled = !testing
+                Modifier.weight(1f), icon = Ico.Activity, enabled = !testing, busy = testing
             )
         }
         Section("Задержка") {
