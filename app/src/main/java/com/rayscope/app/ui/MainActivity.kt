@@ -304,6 +304,7 @@ private fun BottomBar(tab: Int, connected: Boolean, onTab: (Int) -> Unit) {
             modifier = Modifier.border(1.dp, c.stroke, RoundedCornerShape(50)),
             dotIndex = 0,
             dot = if (connected && tab != 0) Good else Color.Unspecified,
+            motion = LocalUi.current.motion,
         )
     }
 }
