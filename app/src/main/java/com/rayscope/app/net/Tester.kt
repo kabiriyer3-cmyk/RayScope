@@ -3,14 +3,21 @@ package com.rayscope.app.net
 import com.rayscope.app.core.XrayConfig
 import com.rayscope.app.data.Repo
 import com.rayscope.app.model.Server
+import com.rayscope.sub.ExitIp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import libv2ray.CoreCallbackHandler
 import libv2ray.Libv2ray
+import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.TimeUnit
 
@@ -116,6 +123,69 @@ object Tester {
         val v = if (st.pingAggregate == 1) ok.average().toLong() else ok.min()
         val limit = st.pingTimeout.coerceIn(500, 30_000)
         if (v > limit) -1L to "медленнее порога $limit ms ($v ms)" else v to ""
+    }
+
+    private val quiet = object : CoreCallbackHandler {
+        override fun startup(): Long = 0
+
+        override fun shutdown(): Long = 0
+
+        override fun onEmitStatus(p0: Long, p1: String?): Long = 0
+    }
+
+    private val exitClient = OkHttpClient.Builder()
+        .connectTimeout(6, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.SECONDS)
+        .callTimeout(12, TimeUnit.SECONDS)
+        .build()
+
+    /**
+     * Where [s] really lets you out: a throwaway core with one local HTTP inbound and a request through it to
+     * Cloudflare's trace page (ip-api.com when that fails). The app itself is outside the VPN, so this goes
+     * straight to the server even while connected. Null when the server didn't carry the request.
+     */
+    suspend fun exit(s: Server): ExitIp.Exit? = withContext(Dispatchers.IO) {
+        val port = try {
+            ServerSocket(0).use { it.localPort }
+        } catch (e: Exception) {
+            return@withContext null
+        }
+        val cfg = try {
+            exitConfig(s, port)
+        } catch (e: Throwable) {
+            return@withContext null
+        }
+        val core = try {
+            Libv2ray.newCoreController(quiet)
+        } catch (e: Throwable) {
+            return@withContext null
+        }
+        try {
+            core.startLoop(cfg, 0)
+            val c = exitClient.newBuilder().proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", port))).build()
+            val t = runCatching { ExitIp.parseTrace(IpChecker.get(c, ExitIp.TRACE)) }.getOrNull()
+            if (t != null && t.cc.isNotEmpty()) t
+            else runCatching { ExitIp.parseIpApiLine(IpChecker.get(c, ExitIp.FALLBACK)) }.getOrNull() ?: t
+        } catch (e: Throwable) {
+            null
+        } finally {
+            runCatching { core.stopLoop() }
+        }
+    }
+
+    /**
+     * The usual config of [s] with one local HTTP inbound on [port] instead of the proxy ports and no user rules:
+     * a "direct" rule must not answer instead of the server.
+     */
+    private fun exitConfig(s: Server, port: Int): String {
+        val root = JSONObject(XrayConfig.build(s, Repo.settings, tun = false))
+        root.put("log", JSONObject().put("loglevel", "none"))
+        val inbound = JSONObject().put("tag", "exit-in").put("listen", "127.0.0.1").put("port", port).put("protocol", "http")
+            .put("settings", JSONObject())
+        root.put("inbounds", JSONArray().put(inbound))
+        val rule = JSONObject().put("type", "field").put("inboundTag", JSONArray().put("exit-in")).put("outboundTag", "proxy")
+        root.put("routing", JSONObject().put("domainStrategy", "AsIs").put("rules", JSONArray().put(rule)))
+        return root.toString()
     }
 
     suspend fun resolve(host: String): Pair<List<String>, Long> = withContext(Dispatchers.IO) {
