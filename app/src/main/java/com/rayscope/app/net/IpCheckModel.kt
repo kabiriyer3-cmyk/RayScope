@@ -56,6 +56,13 @@ object IpCheckModel {
                 val entryV = entry.await()
                 val real = r.getOrNull()
                 val vpn = v?.getOrNull()
+                // the address sites see right now is the real exit of the connected server: keep it on the server
+                if (server != null && vpn != null && vpn.ip != real?.ip) {
+                    Repo.update(server.id) {
+                        it.copy(exitIp = vpn.ip, exitCc = vpn.countryCode.uppercase(Locale.US), exitAt = System.currentTimeMillis())
+                    }
+                    Repo.save()
+                }
                 val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
                 val line = when {
                     !connected -> "$time  без VPN: ${real?.ip ?: "?"} ${real?.countryCode.orEmpty()}"

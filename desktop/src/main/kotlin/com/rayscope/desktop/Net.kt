@@ -1,5 +1,6 @@
 package com.rayscope.desktop
 
+import com.rayscope.sub.ExitIp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -48,6 +49,14 @@ object Net {
         } catch (e: Exception) {
             -1L
         }
+    }
+
+    /** Where traffic through the local proxy [port] comes out: address and country, null if nobody answered. */
+    fun exit(port: Int, timeout: Int): ExitIp.Exit? {
+        val t = runCatching { ExitIp.parseTrace(getText(ExitIp.TRACE, port, timeout)) }.getOrNull()
+        if (t != null && t.cc.isNotEmpty()) return t
+        val f = runCatching { ExitIp.parseIpApiLine(getText(ExitIp.FALLBACK, port, timeout)) }.getOrNull()
+        return f ?: t
     }
 
     fun getText(url: String, proxyPort: Int?, timeout: Int): String {
@@ -116,13 +125,27 @@ object Tester {
         }
     }
 
-    /** Real latency through the core: one xray process per chunk, one HTTP inbound per server. */
-    suspend fun realDelays(list: List<Server>, p: Prefs, onResult: (String, Long, String) -> Unit) {
+    /**
+     * Real latency through the core: one xray process per chunk, one HTTP inbound per server. Every server
+     * that answered is also asked where it really lets you out, see [onExit].
+     */
+    suspend fun realDelays(
+        list: List<Server>,
+        p: Prefs,
+        onExit: (String, ExitIp.Exit) -> Unit = { _, _ -> },
+        onResult: (String, Long, String) -> Unit,
+    ) {
         val sem = Semaphore(p.concurrency.coerceIn(1, 64))
-        for (chunk in list.chunked(32)) testChunk(chunk, p, sem, onResult)
+        for (chunk in list.chunked(32)) testChunk(chunk, p, sem, onExit, onResult)
     }
 
-    private suspend fun testChunk(chunk: List<Server>, p: Prefs, sem: Semaphore, onResult: (String, Long, String) -> Unit) {
+    private suspend fun testChunk(
+        chunk: List<Server>,
+        p: Prefs,
+        sem: Semaphore,
+        onExit: (String, ExitIp.Exit) -> Unit,
+        onResult: (String, Long, String) -> Unit,
+    ) {
         val items = mutableListOf<Pair<Server, Int>>()
         val usedPorts = HashSet<Int>()
         for (s in chunk) {
@@ -149,7 +172,7 @@ object Tester {
                 pr.destroy()
                 if (items.size > 1) {
                     // one broken config kills the whole batch: isolate it
-                    for (it in items) testChunk(listOf(it.first), p, sem, onResult)
+                    for (it in items) testChunk(listOf(it.first), p, sem, onExit, onResult)
                 } else {
                     onResult(items[0].first.id, -1L, "Ядро отклонило конфиг")
                 }
@@ -161,6 +184,9 @@ object Tester {
                         sem.withPermit {
                             val d = Net.delay(p.testUrl, port, p.pingTimeout)
                             onResult(s.id, d, if (d < 0) "Нет ответа за ${p.pingTimeout} мс" else "")
+                            if (d >= 0) {
+                                Net.exit(port, p.pingTimeout.coerceIn(3000, 8000))?.let { onExit(s.id, it) }
+                            }
                         }
                     }
                 }.awaitAll()
@@ -293,6 +319,12 @@ object IpCheck {
         val v = vpnD.await()
         val real = r.getOrNull()
         val vpn = v?.getOrNull()
+        // the address sites see right now is the real exit of the connected server: keep it on the server
+        val sid = Engine.status.value.serverId
+        if (vpn != null && sid != null && vpn.ip != real?.ip) {
+            Store.update(sid) { it.copy(exitIp = vpn.ip, exitCc = vpn.countryCode.uppercase(), exitAt = System.currentTimeMillis()) }
+            Store.saveServers()
+        }
         val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         val line = when {
             port == null -> "$time  без VPN: ${real?.ip ?: "?"} ${real?.countryCode.orEmpty()}"
