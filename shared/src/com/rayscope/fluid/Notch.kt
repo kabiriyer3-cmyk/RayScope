@@ -1,16 +1,18 @@
 /*
  * Notch layout: the connect tile sits in the top-left corner and the panel wraps around it with an even gap.
- * When the tunnel comes up, light runs into that gap. Also the pill tab bar that stretches like jelly.
+ * When the tunnel comes up, light runs around the tile. Also the pill tab bar.
  * Shared by Android and Windows.
  */
 package com.rayscope.fluid
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -108,16 +110,29 @@ fun notchPath(size: Size, s: Float, g: Float, rt: Float, rp: Float, rc: Float): 
     }
 }
 
-/** Centre line of the gap: down the tile's right side, around its inner corner, along its bottom. */
-fun groovePath(s: Float, g: Float, rt: Float, rc: Float): Path {
+/**
+ * Centre line of the channel around the tile: the gap on the panel side, the window margin on the other two.
+ * Starts in the middle of the inner (bottom-right) corner and runs clockwise.
+ */
+fun ringPath(s: Float, g: Float, rt: Float): Path {
     val m = g / 2f
-    val c = s - rt
     val r = rt + m
+    val a = rt
+    val b = s - rt
+    val k = 0.70710677f
+    fun box(cx: Float, cy: Float) = Rect(cx - r, cy - r, cx + r, cy + r)
     return Path().apply {
-        moveTo(s + m, rc)
-        lineTo(s + m, c)
-        arcTo(Rect(c - r, c - r, c + r, c + r), 0f, 90f, false)
-        lineTo(rc, s + m)
+        moveTo(b + r * k, b + r * k)
+        arcTo(box(b, b), 45f, 45f, false)
+        lineTo(a, s + m)
+        arcTo(box(a, b), 90f, 90f, false)
+        lineTo(-m, a)
+        arcTo(box(a, a), 180f, 90f, false)
+        lineTo(b, -m)
+        arcTo(box(b, a), 270f, 90f, false)
+        lineTo(s + m, b)
+        arcTo(box(b, b), 0f, 45f, false)
+        close()
     }
 }
 
@@ -130,45 +145,56 @@ class NotchShape(private val spec: NotchSpec) : Shape {
 }
 
 /**
- * Light in the gap between the tile and the panel. [level]: 0 off, 1 connecting (a short beam breathes out of the
- * inner corner, a drop runs ahead of each end), 2 connected (the beam spreads along the whole gap and stays).
+ * Light around the connect tile. [level]: 0 off, 1 connecting (one short beam runs around the tile at an even
+ * pace), 2 connected (the ring draws itself from the inner corner both ways and stays). Eased, never springy.
  */
 @Composable
 fun GrooveRay(spec: NotchSpec, level: Int, color: Color, modifier: Modifier = Modifier, width: Dp = 3.dp, motion: Boolean = true) {
-    val base by animateFloatAsState(
-        when (level) {
-            2 -> 1f
-            1 -> 0.3f
-            else -> 0f
-        },
-        if (motion) spring(dampingRatio = 0.8f, stiffness = 70f) else tween(0),
-        label = "grooveBase"
+    val ring by animateFloatAsState(
+        if (level == 2) 1f else 0f,
+        if (motion) tween(if (level == 2) 750 else 320, easing = FastOutSlowInEasing) else snap(),
+        label = "grooveRing"
+    )
+    val beam by animateFloatAsState(
+        if (level == 1) 1f else 0f,
+        if (motion) tween(320, easing = FastOutSlowInEasing) else snap(),
+        label = "grooveBeam"
     )
     var phase = 0f
     if (level == 1 && motion) {
         val inf = rememberInfiniteTransition(label = "groove")
-        val t by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(1400, easing = LinearEasing)), label = "grooveT")
+        val t by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(1700, easing = LinearEasing)), label = "grooveT")
         phase = t
     }
-    val shown = (base + if (level == 1) 0.14f * sin(phase * TWO_PI) else 0f).coerceIn(0f, 1f)
-    val drops = level == 1
-    if (shown > 0.004f) {
+    if (ring > 0.003f || beam > 0.003f) {
         Canvas(modifier) {
-            val path = groovePath(spec.tile.toPx(), spec.gap.toPx(), spec.tileRadius.toPx(), spec.cusp.toPx())
+            val path = ringPath(spec.tile.toPx(), spec.gap.toPx(), spec.tileRadius.toPx())
             val pm = PathMeasure()
             pm.setPath(path, false)
             val len = pm.length
-            val mid = len / 2f
-            val half = mid * shown
-            val seg = Path()
-            pm.getSegment(mid - half, mid + half, seg, true)
-            val sw = width.toPx()
-            drawPath(seg, color, style = Stroke(width = sw, cap = StrokeCap.Round))
-            if (drops) {
-                val ahead = sw * 2.4f
-                val dot = color.copy(alpha = color.alpha * 0.8f)
-                drawCircle(dot, sw * 0.45f, pm.getPosition((mid - half - ahead).coerceAtLeast(0f)))
-                drawCircle(dot, sw * 0.45f, pm.getPosition((mid + half + ahead).coerceAtMost(len)))
+            val stroke = Stroke(width = width.toPx(), cap = StrokeCap.Round)
+            if (ring > 0.003f) {
+                val half = len / 2f * ring
+                val seg = Path()
+                pm.getSegment(0f, half, seg, true)
+                pm.getSegment(len - half, len, seg, true)
+                drawPath(seg, color.copy(alpha = color.alpha * ring.coerceIn(0f, 1f)), style = stroke)
+            }
+            if (beam > 0.003f) {
+                if (!motion) {
+                    drawPath(path, color.copy(alpha = color.alpha * 0.35f * beam), style = stroke)
+                } else {
+                    val head = phase * len
+                    val start = head - len * 0.22f
+                    val seg = Path()
+                    if (start >= 0f) {
+                        pm.getSegment(start, head, seg, true)
+                    } else {
+                        pm.getSegment(len + start, len, seg, true)
+                        pm.getSegment(0f, head, seg, true)
+                    }
+                    drawPath(seg, color.copy(alpha = color.alpha * 0.9f * beam), style = stroke)
+                }
             }
         }
     }
@@ -268,8 +294,8 @@ fun NotchFrame(
 }
 
 /**
- * Pill tab bar. The active tab grows into a pill with its label, the others shrink to icons; widths move on the
- * jelly spring, so the pill seems to flow from one tab to the next.
+ * Pill tab bar. The active tab grows into a pill with its label, the others shrink to icons; widths ease from
+ * one tab to the next without overshoot.
  */
 @Composable
 fun PillTabs(
@@ -291,7 +317,7 @@ fun PillTabs(
     ) {
         items.forEachIndexed { i, item ->
             val sel = i == selected
-            val w by animateFloatAsState(if (sel) 2.5f else 1f, Fluid.jelly(), label = "tabWidth")
+            val w by animateFloatAsState(if (sel) 2.5f else 1f, tween(280, easing = FastOutSlowInEasing), label = "tabWidth")
             val bg by animateColorAsState(if (sel) pill else pill.copy(alpha = 0f), tween(220), label = "tabFill")
             val fg by animateColorAsState(if (sel) onPill else ink, tween(220), label = "tabInk")
             val src = remember { MutableInteractionSource() }
