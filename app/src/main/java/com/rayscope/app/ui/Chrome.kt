@@ -4,7 +4,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -22,12 +21,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsTopHeight
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,15 +41,14 @@ import androidx.compose.ui.unit.sp
 
 /** Top offset for page content: status bar + top bar. */
 @Composable
-fun pageTop(): Dp = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 60.dp
+fun pageTop(): Dp = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 56.dp
 
 @Composable
 fun navBottom(): Dp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
 /**
- * Screen scaffold. Content scrolls under a flat top bar that fades in a solid background + hairline
- * once [scrolled]; the large title lives in the content. Glass is reserved for [overlay] elements
- * (floating buttons), which refract the page content under them.
+ * Screen scaffold. Content scrolls under a flat top bar; once [scrolled], the bar gets a solid
+ * background, a hairline and the small title. [overlay] holds floating elements above the content.
  */
 @Composable
 fun Page(
@@ -65,58 +60,54 @@ fun Page(
     content: @Composable () -> Unit,
 ) {
     val c = ray
-    val bd = rememberBackdrop()
-    val bar by animateFloatAsState(if (scrolled) 1f else 0f, tween(220), label = "topBar")
+    val bar by animateFloatAsState(if (scrolled) 1f else 0f, tween(160), label = "topBar")
     val bg = c.bg
     val stroke = c.stroke
     Box(Modifier.fillMaxSize()) {
-        BackdropSource(bd, Modifier.fillMaxSize()) { content() }
+        Box(Modifier.fillMaxSize()) { content() }
         Column(Modifier.fillMaxWidth()) {
             Box(Modifier.fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars).background(bg))
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .height(60.dp)
+                    .height(56.dp)
                     .drawBehind {
-                        drawRect(bg.copy(alpha = 0.97f * bar))
+                        drawRect(bg.copy(alpha = bar))
                         drawLine(
                             stroke.copy(alpha = stroke.alpha * bar),
                             Offset(0f, size.height - 0.5f), Offset(size.width, size.height - 0.5f), 1f
                         )
                     }
-                    .padding(horizontal = 12.dp)
+                    .padding(horizontal = 8.dp)
             ) {
                 if (onBack != null) {
                     ActionIcon(RayIcons.Back, "Назад", modifier = Modifier.align(Alignment.CenterStart), onClick = onBack)
                 }
                 if (title != null) {
                     Text(
-                        title, color = c.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                        title, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.Medium,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
                             .align(Alignment.Center)
-                            .widthIn(max = 200.dp)
-                            .graphicsLayer {
-                                alpha = bar
-                                translationY = (1f - bar) * 10.dp.toPx()
-                            }
+                            .widthIn(max = 220.dp)
+                            .graphicsLayer { alpha = bar }
                     )
                 }
                 if (actions != null) {
                     Row(
                         Modifier.align(Alignment.CenterEnd),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         content = actions
                     )
                 }
             }
         }
-        CompositionLocalProvider(LocalBackdrop provides bd) { overlay() }
+        overlay()
     }
 }
 
-/** Round flat icon button used in top bars. */
+/** Borderless icon button used in top bars. */
 @Composable
 fun ActionIcon(
     icon: ImageVector,
@@ -129,23 +120,22 @@ fun ActionIcon(
 ) {
     val c = ray
     Box(
-        modifier.size(40.dp).clip(CircleShape).background(c.raised).border(1.dp, c.stroke, CircleShape)
-            .clickable(enabled = enabled, onClick = onClick),
+        modifier.size(40.dp).clip(c.shape(16.dp)).bounceClick(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, contentDescription = desc, tint = if (enabled) tint else tint.copy(alpha = 0.35f), modifier = iconModifier.size(19.dp))
+        Icon(icon, contentDescription = desc, tint = if (enabled) tint else tint.copy(alpha = 0.35f), modifier = iconModifier.size(20.dp))
     }
 }
 
 @Composable
 fun ActionText(text: String, color: Color = ray.accent, onClick: () -> Unit) {
     val c = ray
-    val shape = RoundedCornerShape(20.dp)
+    val shape = c.shape(16.dp)
     Box(
-        Modifier.height(40.dp).clip(shape).background(c.raised).border(1.dp, c.stroke, shape)
-            .clickable(onClick = onClick).padding(horizontal = 14.dp),
+        Modifier.height(34.dp).clip(shape).border(1.dp, c.stroke, shape)
+            .bounceClick(onClick = onClick).padding(horizontal = 12.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(text, color = color, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        Text(text, color = if (color == Bad) Bad else c.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
     }
 }

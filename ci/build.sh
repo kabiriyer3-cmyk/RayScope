@@ -23,7 +23,7 @@ if [[ "$REF" == refs/tags/v* ]]; then
   VERSION_NAME="${REF#refs/tags/v}"
   TAG="${REF#refs/tags/}"
 else
-  VERSION_NAME="1.0.${RUN_NUMBER:-0}"
+  VERSION_NAME="1.1.${RUN_NUMBER:-0}"
   TAG="v$VERSION_NAME"
 fi
 export VERSION_NAME
