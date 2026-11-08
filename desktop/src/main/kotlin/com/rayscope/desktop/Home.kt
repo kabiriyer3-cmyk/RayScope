@@ -220,7 +220,7 @@ private fun ModeCard(st: Status, prefs: Prefs) {
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(p.surface).padding(top = 12.dp, bottom = 4.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Режим", color = p.text, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            if (st.systemProxy) Tag("прокси Windows", Good)
+            if (st.systemProxy) Tag(if (Paths.isWindows) "прокси Windows" else "системный прокси", Good)
             if (st.tun) Tag("TUN", Good)
         }
         Spacer(Modifier.height(10.dp))
@@ -288,7 +288,7 @@ private fun FastList(sel: Server?, servers: List<Server>, testing: Boolean, onGo
             Btn("Все", onGoServers, color = p.hint, icon = Ico.Arrow)
         }
         when {
-            servers.isEmpty() -> EmptyHint("Серверов пока нет", "Добавьте подписку или ссылки vless://, vmess://, trojan://", "Добавить", onAction = onGoServers)
+            servers.isEmpty() -> EmptyHint("Серверов пока нет", "Добавьте подписку, ссылки vless://, trojan:// или прокси socks5://", "Добавить", onAction = onGoServers)
             best.isEmpty() -> EmptyHint("Ещё не проверены", "Пинг покажет, какие серверы живые", if (testing) "Проверяю…" else "Пинг всех", enabled = !testing) {
                 Actions.go { Actions.testAll() }
             }

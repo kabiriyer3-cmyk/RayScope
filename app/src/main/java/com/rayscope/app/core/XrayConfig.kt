@@ -1,5 +1,6 @@
 package com.rayscope.app.core
 
+import com.rayscope.sub.ProxyLinks
 import com.rayscope.app.data.Settings
 import com.rayscope.app.model.Server
 import org.json.JSONArray
@@ -68,9 +69,15 @@ object XrayConfig {
         outbounds.put(JSONObject().put("tag", "direct").put("protocol", "freedom"))
         outbounds.put(JSONObject().put("tag", "block").put("protocol", "blackhole"))
         if (useFragment) outbounds.put(fragmentOutbound(st))
+        // a plain proxy often can't carry UDP (HTTP never does): DNS from the tunnel goes to the core over TCP
+        val plainDns = tun && ProxyLinks.isPlain(s.protocol)
+        if (plainDns) outbounds.put(JSONObject().put("tag", "dns-out").put("protocol", "dns").put("settings", JSONObject().put("network", "tcp")))
         root.put("outbounds", outbounds)
 
         val rules = JSONArray()
+        if (plainDns) {
+            rules.put(rule("dns-out").put("inboundTag", JSONArray().put("tun")).put("network", "udp").put("port", "53"))
+        }
         val (blockDomains, blockIps) = splitRules(st.blockRules)
         val (directDomains, directIps) = splitRules(st.directRules)
         if (blockDomains.isNotEmpty()) rules.put(rule("block").put("domain", JSONArray(blockDomains)))
@@ -81,12 +88,16 @@ object XrayConfig {
         if (directIps.isNotEmpty()) rules.put(rule("direct").put("ip", JSONArray(directIps)))
         root.put("routing", JSONObject().put("domainStrategy", st.domainStrategy.ifEmpty { "AsIs" }).put("rules", rules))
 
-        val dns = JSONObject().put("servers", JSONArray(st.dnsList()))
+        val servers = if (plainDns) st.dnsList().map { if (isIpLiteral(it)) "tcp://$it" else it } else st.dnsList()
+        val dns = JSONObject().put("servers", JSONArray(servers))
         val qs = st.dnsQueryStrategy
         if (qs == "UseIPv4" || qs == "UseIPv6") dns.put("queryStrategy", qs)
         root.put("dns", dns)
         return root.toString()
     }
+
+    private fun isIpLiteral(v: String): Boolean =
+        v.isNotEmpty() && !v.contains("://") && (v.all { it.isDigit() || it == '.' } || (v.contains(':') && v.all { it.isLetterOrDigit() || it == ':' || it == '.' }))
 
     private fun validPort(p: Int, def: Int): Int = if (p in 1025..65535) p else def
 
@@ -165,6 +176,11 @@ object XrayConfig {
                 o.put("protocol", "hysteria")
                 set.put("version", 2)
             }
+            // plain proxies (see ProxyLinks): login and password are kept as user:pass
+            "socks", "http" -> {
+                o.put("protocol", s.protocol)
+                if (s.uuid.isNotEmpty()) set.put("user", s.uuid.substringBefore(':')).put("pass", s.uuid.substringAfter(':', ""))
+            }
             else -> throw IllegalArgumentException("Неподдерживаемый протокол: ${s.protocol}")
         }
         o.put("settings", set)
@@ -180,7 +196,7 @@ object XrayConfig {
         if (sock.length() > 0) stream.put("sockopt", sock)
         o.put("streamSettings", stream)
 
-        if (st != null && st.muxEnabled && s.flow.isEmpty() && !udpOnly) {
+        if (st != null && st.muxEnabled && s.flow.isEmpty() && !udpOnly && !ProxyLinks.isPlain(s.protocol)) {
             o.put(
                 "mux", JSONObject()
                     .put("enabled", true)

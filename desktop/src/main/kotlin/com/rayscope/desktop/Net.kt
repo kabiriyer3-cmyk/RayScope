@@ -91,8 +91,11 @@ object Tester {
     /** "время=45мс TTL=56", "time<1ms TTL=128", "temps=12 ms TTL=55": every Windows language keeps the TTL token. */
     private val PING_TIME = Regex("[=<]\\s*(\\d+)\\s*\\S*\\s+TTL=", RegexOption.IGNORE_CASE)
 
+    /** iputils and busybox under LC_ALL=C: "time=12.3 ms". */
+    private val UNIX_TIME = Regex("time[=<]\\s*([\\d.]+)\\s*ms")
+
     /**
-     * ICMP echo to the server, like the ping command (Windows lets any user send it), -1 if there is no reply.
+     * ICMP echo to the server through the system ping command (any user may run it), -1 if there is no reply.
      * The name is resolved first: DNS time is not part of the result.
      */
     fun icmp(s: Server, timeout: Int): Long {
@@ -106,12 +109,32 @@ object Tester {
                 pr.waitFor()
                 PING_TIME.find(out)?.groupValues?.get(1)?.toLongOrNull() ?: -1L
             } else {
-                val t0 = System.nanoTime()
-                if (ip.isReachable(t)) (System.nanoTime() - t0) / 1_000_000 else -1L
+                (if (windows) null else unixPing(text, t)) ?: javaPing(ip, t)
             }
         } catch (e: Exception) {
             -1L
         }
+    }
+
+    private fun javaPing(ip: InetAddress, timeoutMs: Int): Long {
+        val t0 = System.nanoTime()
+        return if (ip.isReachable(timeoutMs)) (System.nanoTime() - t0) / 1_000_000 else -1L
+    }
+
+    /** Linux ping; null when there is no ping command (then Java's own check is used). */
+    private fun unixPing(ip: String, timeoutMs: Int): Long? {
+        val pb = ProcessBuilder("ping", "-n", "-c", "1", "-W", ((timeoutMs + 999) / 1000).coerceAtLeast(1).toString(), ip)
+            .redirectErrorStream(true)
+        pb.environment()["LC_ALL"] = "C"
+        val pr = try {
+            pb.start()
+        } catch (e: Exception) {
+            return null
+        }
+        val out = pr.inputStream.bufferedReader().use { it.readText() }
+        pr.waitFor()
+        val ms = UNIX_TIME.find(out)?.groupValues?.get(1)?.toDoubleOrNull() ?: return -1L
+        return Math.round(ms).coerceAtLeast(1L)
     }
 
     fun tcp(s: Server, timeout: Int): Long {

@@ -10,6 +10,7 @@ import java.net.Inet4Address
 import java.net.InetAddress
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import kotlin.system.exitProcess
 
@@ -21,9 +22,12 @@ object Mode {
 }
 
 /**
- * TUN mode: sing-box puts a virtual network adapter in front of Windows, catches the traffic of every program
+ * TUN mode: sing-box puts a virtual network adapter in front of the system, catches the traffic of every program
  * (games and Telegram included) and hands it to the local SOCKS port of xray. xray itself, RayScope and the
  * server address stay outside of the adapter, so nothing loops back.
+ *
+ * Windows: RayScope itself runs as administrator. Linux: sing-box gets root through the pkexec password dialog, and
+ * since a root process can't be killed from here, it lives exactly as long as our end of its stdin stays open.
  */
 object Tun {
     @Volatile
@@ -33,6 +37,14 @@ object Tun {
 
     private val IPV4 = Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")
 
+    /** Root shell for Linux: $1 sing-box, $2 config, $3 work dir. Stops sing-box when stdin (kept in fd 3) closes. */
+    private const val ROOT_SCRIPT =
+        "exec 3<&0; \"\$1\" run -c \"\$2\" -D \"\$3\" --disable-color </dev/null & p=\$!; " +
+            "( cat <&3 >/dev/null; kill \$p ) >/dev/null 2>&1 & exec 3<&-; wait \$p"
+
+    /** Windows always (UAC), Linux when pkexec (polkit) is installed. */
+    val supported: Boolean get() = Paths.isWindows || Paths.which("pkexec") != null
+
     fun exe(): File? {
         val core = Paths.xray()?.parentFile ?: File(Paths.home, "core")
         return File(core, if (Paths.isWindows) "sing-box.exe" else "sing-box").takeIf { it.isFile }
@@ -40,39 +52,57 @@ object Tun {
 
     /** Starts the adapter for [s] in front of the SOCKS port of the running core. Throws with a readable message. */
     fun start(s: Server, socksPort: Int, p: Prefs) {
-        if (!Paths.isWindows) throw IOException("Режим TUN есть только в Windows")
+        if (!supported) throw IOException("Для TUN в Linux нужен pkexec: установите пакет pkexec или policykit-1")
         if (!Elevation.isAdmin) {
             throw IOException("Для TUN нужны права администратора: выберите TUN ещё раз, RayScope перезапустится")
         }
-        val exe = exe() ?: throw IOException("Не найден sing-box.exe в папке core: переустановите RayScope")
+        val name = if (Paths.isWindows) "sing-box.exe" else "sing-box"
+        val exe = exe() ?: throw IOException("Не найден $name в папке core: переустановите RayScope")
         stop()
         val dir = File(Paths.data, "run").apply { mkdirs() }
         val cfg = File(dir, "tun.json")
         cfg.writeText(config(s, resolve(s.address), socksPort, p))
-        val pr = ProcessBuilder(exe.absolutePath, "run", "-c", cfg.absolutePath, "-D", dir.absolutePath, "--disable-color")
-            .directory(exe.parentFile)
-            .redirectErrorStream(true)
-            .start()
+        val pr = if (Paths.isWindows) {
+            ProcessBuilder(exe.absolutePath, "run", "-c", cfg.absolutePath, "-D", dir.absolutePath, "--disable-color")
+                .directory(exe.parentFile)
+                .redirectErrorStream(true)
+                .start()
+        } else {
+            if (!exe.canExecute()) exe.setExecutable(true)
+            ProcessBuilder("pkexec", "/bin/sh", "-c", ROOT_SCRIPT, "sh", exe.absolutePath, cfg.absolutePath, dir.absolutePath)
+                .redirectErrorStream(true)
+                .start()
+        }
+        // on Linux the password dialog is open meanwhile
+        val wait = if (Paths.isWindows) 12L else 120L
         val up = CountDownLatch(1)
+        val started = AtomicBoolean(false)
         val important = Regex("\\b(WARN|ERROR|FATAL|PANIC)\\b")
         thread(isDaemon = true, name = "sing-box") {
             try {
                 pr.inputStream.bufferedReader().forEachLine { line ->
-                    val started = line.contains("sing-box started")
+                    val isStart = line.contains("sing-box started")
                     // every connection is logged at info level: keep only the start line and problems
-                    if (started || important.containsMatchIn(line)) Log.add("tun: " + line.trim().take(400))
-                    if (started) up.countDown()
+                    if (isStart || important.containsMatchIn(line) || line.startsWith("Error")) Log.add("tun: " + line.trim().take(400))
+                    if (isStart) {
+                        started.set(true)
+                        up.countDown()
+                    }
                 }
             } catch (e: Exception) {
                 // process ended
             }
             up.countDown()
         }
-        val ok = up.await(12, TimeUnit.SECONDS)
-        if (!pr.isAlive) throw IOException("TUN не запустился: " + Log.tail(2))
-        if (!ok) {
-            pr.destroy()
-            throw IOException("TUN не запустился за 12 секунд: смотрите журнал")
+        up.await(wait, TimeUnit.SECONDS)
+        if (!started.get()) {
+            if (!pr.waitFor(2, TimeUnit.SECONDS)) {
+                kill(pr)
+                throw IOException("TUN не запустился за $wait секунд: смотрите журнал")
+            }
+            val code = pr.exitValue()
+            if (!Paths.isWindows && (code == 126 || code == 127)) throw IOException("TUN не включён: пароль администратора не подтверждён")
+            throw IOException("TUN не запустился: " + Log.tail(2))
         }
         proc = pr
         Log.add("TUN включён: весь трафик компьютера идёт через RayScope")
@@ -81,13 +111,23 @@ object Tun {
     fun stop() {
         val pr = proc ?: return
         proc = null
-        pr.destroy()
+        kill(pr)
         try {
-            if (!pr.waitFor(3, TimeUnit.SECONDS)) pr.destroyForcibly()
+            if (!pr.waitFor(5, TimeUnit.SECONDS)) pr.destroyForcibly()
         } catch (e: Exception) {
             pr.destroyForcibly()
         }
         Log.add("TUN выключен")
+    }
+
+    /** Closing stdin stops the root sing-box on Linux; destroy() is enough on Windows. */
+    private fun kill(pr: Process) {
+        try {
+            pr.outputStream.close()
+        } catch (e: Exception) {
+            // already closed
+        }
+        pr.destroy()
     }
 
     private fun resolve(host: String): List<String> = try {
@@ -99,9 +139,9 @@ object Tun {
     private fun plainDns(p: Prefs): String =
         p.dns.split(',', ' ', ';').map { it.trim() }.firstOrNull { IPV4.matches(it) } ?: "1.1.1.1"
 
-    /** Case-insensitive exact match for a Windows path (sing-box uses Go regular expressions). */
+    /** Exact match for a path, case-insensitive on Windows (sing-box uses Go regular expressions). */
     private fun pathRegex(f: File): String {
-        val sb = StringBuilder("(?i)^")
+        val sb = StringBuilder(if (Paths.isWindows) "(?i)^" else "^")
         for (ch in f.absolutePath) {
             if ("\\.^$|?*+()[]{}".indexOf(ch) >= 0) sb.append('\\')
             sb.append(ch)
@@ -112,9 +152,14 @@ object Tun {
     private fun config(s: Server, serverIps: List<String>, socksPort: Int, p: Prefs): String {
         val dns = plainDns(p)
         val self = JSONArray()
-            .put(pathRegex(File(Paths.home, "runtime\\bin\\javaw.exe")))
-            .put(pathRegex(File(Paths.home, "runtime\\bin\\java.exe")))
-        val cores = JSONArray().put("xray.exe").put("sing-box.exe")
+        val cores = JSONArray()
+        if (Paths.isWindows) {
+            self.put(pathRegex(File(Paths.home, "runtime\\bin\\javaw.exe"))).put(pathRegex(File(Paths.home, "runtime\\bin\\java.exe")))
+            cores.put("xray.exe").put("sing-box.exe")
+        } else {
+            self.put(pathRegex(File(Paths.home, "runtime/bin/java")))
+            cores.put("xray").put("sing-box")
+        }
 
         val dnsRules = JSONArray()
         // the server name must resolve without the tunnel, otherwise the core waits for itself
@@ -171,11 +216,14 @@ object Tun {
     }
 }
 
-/** Administrator rights on Windows: TUN needs them to create the network adapter. */
+/**
+ * Administrator rights on Windows: TUN needs them to create the network adapter. Linux needs nothing up front,
+ * TUN asks for the password itself, so it counts as ready.
+ */
 object Elevation {
     val isAdmin: Boolean by lazy {
         if (!Paths.isWindows) {
-            false
+            true
         } else {
             try {
                 NativeLibrary.getInstance("shell32").getFunction("IsUserAnAdmin").invokeInt(arrayOf<Any>()) != 0
@@ -217,8 +265,12 @@ object Modes {
     val askAdmin = MutableStateFlow(false)
 
     fun request(mode: Int) {
+        if (mode == Mode.TUN && !Tun.supported) {
+            Notice.show("Для TUN нужен pkexec: установите пакет pkexec или policykit-1")
+            return
+        }
         if (mode == Mode.TUN && !Elevation.isAdmin) {
-            if (Paths.isWindows) askAdmin.value = true else Notice.show("Режим TUN есть только в Windows")
+            askAdmin.value = true
             return
         }
         Engine.setMode(mode)

@@ -2,7 +2,7 @@
  * Subscription formats beyond plain share links. Panels like Remnawave and Marzban answer Happ, v2rayNG and
  * v2RayTun with full Xray JSON configs instead of vless:// lines, Hiddify gets sing-box JSON, links arrive wrapped
  * in app deep links (happ://add/https://..., v2raytun://import/...) or inside an HTML page. All of that is read
- * into [ProxyEntry] here, and each app turns it into its own Server.
+ * into [ProxyEntry] here, and each app turns it into its own Server. Plain SOCKS5 and HTTP proxies: see [ProxyLinks].
  * Shared by Android and Windows.
  */
 package com.rayscope.sub
@@ -57,11 +57,17 @@ object SubFormats {
     private val SHARE = setOf("vless", "vmess", "trojan", "ss", "hysteria2", "hy2")
     private val XRAY_PROXIES = setOf("vless", "vmess", "trojan", "shadowsocks", "hysteria", "hysteria2")
     private val BOX_PROXIES = setOf("vless", "vmess", "trojan", "shadowsocks", "hysteria2")
-    private val LINK = Regex("(?:vless|vmess|trojan|ss|hysteria2|hy2)://[^\\s\"'<>`\\\\]+", RegexOption.IGNORE_CASE)
+    private val LINK = Regex(
+        "(?:(?:vless|vmess|trojan|ss|hysteria2|hy2|socks5h?|socks)://|tg://socks\\?|https?://(?:t|telegram)\\.me/socks\\?)[^\\s\"'<>`\\\\]+",
+        RegexOption.IGNORE_CASE
+    )
     private val TECH_TAG = Regex("^(proxy|outbound|out)([-_ .].*|\\d*)$", RegexOption.IGNORE_CASE)
     private const val ABC = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
-    fun isHttp(s: String): Boolean = s.startsWith("http://", ignoreCase = true) || s.startsWith("https://", ignoreCase = true)
+    /** A web address to download (a subscription). http://user:pass@host:port and t.me links are proxies, not that. */
+    fun isHttp(s: String): Boolean =
+        (s.startsWith("http://", ignoreCase = true) || s.startsWith("https://", ignoreCase = true)) &&
+            !ProxyLinks.isTelegram(s) && !ProxyLinks.isProxy(s)
 
     // ------------------------------------------------------------------ JSON subscriptions
 
@@ -403,7 +409,7 @@ object SubFormats {
 
     // ------------------------------------------------------------------ share links
 
-    /** [e] as a vless://, vmess://, trojan://, ss:// or hysteria2:// link. */
+    /** [e] as a vless://, vmess://, trojan://, ss://, hysteria2://, socks5:// or http(s):// link. */
     fun link(e: ProxyEntry): String {
         val host = if (e.address.contains(':') && !e.address.startsWith("[")) "[" + e.address + "]" else e.address
         val tag = if (e.name.isEmpty()) "" else "#" + enc(e.name)
@@ -418,6 +424,7 @@ object SubFormats {
                     .put("fp", e.fingerprint)
                 "vmess://" + b64encode(o.toString(), urlSafe = false, pad = true)
             }
+            "socks", "http" -> ProxyLinks.link(e)
             "ss" -> "ss://" + b64encode(e.method + ":" + e.uuid, urlSafe = true, pad = false) + "@" + host + ":" + e.port + tag
             "hysteria2" -> "hysteria2://" + enc(e.uuid) + "@" + host + ":" + e.port + params(
                 "sni" to e.sni,

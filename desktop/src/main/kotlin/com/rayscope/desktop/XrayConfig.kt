@@ -1,5 +1,6 @@
 package com.rayscope.desktop
 
+import com.rayscope.sub.ProxyLinks
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -187,6 +188,11 @@ object XrayConfig {
                 o.put("protocol", "hysteria")
                 set.put("version", 2)
             }
+            // plain proxies (see ProxyLinks): login and password are kept as user:pass
+            "socks", "http" -> {
+                o.put("protocol", s.protocol)
+                if (s.uuid.isNotEmpty()) set.put("user", s.uuid.substringBefore(':')).put("pass", s.uuid.substringAfter(':', ""))
+            }
             else -> throw IllegalArgumentException("Неподдерживаемый протокол: ${s.protocol}")
         }
         o.put("settings", set)
@@ -199,7 +205,7 @@ object XrayConfig {
         if (sock.length() > 0) stream.put("sockopt", sock)
         o.put("streamSettings", stream)
 
-        if (p.muxEnabled && s.flow.isEmpty() && !udpOnly) {
+        if (p.muxEnabled && s.flow.isEmpty() && !udpOnly && !ProxyLinks.isPlain(s.protocol)) {
             o.put(
                 "mux", JSONObject()
                     .put("enabled", true)
