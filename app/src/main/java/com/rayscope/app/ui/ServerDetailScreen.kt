@@ -33,6 +33,7 @@ import com.rayscope.app.net.IpInfo
 import com.rayscope.app.net.Tester
 import com.rayscope.app.util.Fmt
 import com.rayscope.app.util.toast
+import com.rayscope.sub.ExitIp
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -103,7 +104,7 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
             // ---- hero
             Column(Modifier.appear(0).fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).card(c, 24.dp).padding(18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    FlagBox(s.flagEmoji(), 56.dp)
+                    FlagBox(s.realFlag(), 56.dp)
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
@@ -159,7 +160,8 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                         onClick = {
                             testing = true
                             scope.launch {
-                                Actions.testOne(s.id, save = true)
+                                // the honest check through the core, which also finds the real exit
+                                Actions.testOne(s.id, save = true, core = true)
                                 testing = false
                             }
                         },
@@ -258,7 +260,34 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                 }
             }
 
-            Group("Где сервер", modifier = Modifier.appear(4)) {
+            Group(
+                "Реальный выход", modifier = Modifier.appear(4),
+                footer = if (s.exitIp.isEmpty()) "Узнаётся при проверке через ядро: нажмите «Проверить»"
+                else "Этот адрес видят сайты, когда вы подключены к серверу"
+            ) {
+                if (s.exitIp.isEmpty()) {
+                    KV("IP", "ещё не проверяли")
+                } else {
+                    val claimed = s.claimedCountry()
+                    KV("IP", s.exitIp, mono = true)
+                    KV(
+                        "Страна",
+                        if (s.exitCc.isEmpty()) "не определена" else (ExitIp.flagOf(s.exitCc) + " " + ExitIp.countryName(s.exitCc)).trim(),
+                        if (s.isFake()) Mid else androidx.compose.ui.graphics.Color.Unspecified
+                    )
+                    if (claimed.isNotEmpty()) KV("В названии", (ExitIp.flagOf(claimed) + " " + ExitIp.countryName(claimed)).trim())
+                    KV("Проверен", Fmt.ago(s.exitAt))
+                    if (s.isFake()) {
+                        PrefRow(
+                            RayIcons.Alert, Mid,
+                            "Сервер подписан как " + ExitIp.countryName(claimed) + ", а сайты увидят " + ExitIp.countryName(s.exitCc),
+                            divider = false
+                        )
+                    }
+                }
+            }
+
+            Group("Где вход", modifier = Modifier.appear(5)) {
                 if (dev) KV("IP (DNS)", resolved ?: "определяю…", mono = true)
                 val g = geo
                 val ge = geoErr

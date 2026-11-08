@@ -41,6 +41,7 @@ import com.rayscope.app.util.Fmt
 import com.rayscope.app.util.toast
 import com.rayscope.fluid.LiveIcon
 import com.rayscope.fluid.rememberIconFx
+import com.rayscope.sub.ExitIp
 import kotlinx.coroutines.launch
 
 enum class SFilter(val title: String) {
@@ -51,7 +52,7 @@ enum class SSort(val title: String) {
     DEFAULT("Как в подписке"), PING("По пингу"), NAME("По имени"), STABILITY("По стабильности")
 }
 
-private fun filterSort(all: List<Server>, f: SFilter, sort: SSort, q: String): List<Server> {
+private fun filterSort(all: List<Server>, f: SFilter, sort: SSort, q: String, country: String = ""): List<Server> {
     var l = all.filter { s ->
         when (f) {
             SFilter.ALL -> true
@@ -61,10 +62,13 @@ private fun filterSort(all: List<Server>, f: SFilter, sort: SSort, q: String): L
             SFilter.FAV -> s.favorite
         }
     }
+    // the real exit country once a check found it, the one from the name until then
+    if (country.isNotEmpty()) l = l.filter { it.realCountry() == country }
     if (q.isNotBlank()) {
         l = l.filter {
             it.name.contains(q, true) || it.address.contains(q, true) ||
-                it.protocol.contains(q, true) || it.network.contains(q, true)
+                it.protocol.contains(q, true) || it.network.contains(q, true) ||
+                ExitIp.matches(q, it.exitIp, it.realCountry())
         }
     }
     return when (sort) {
@@ -99,6 +103,8 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
     var filter by rememberSaveable { mutableStateOf(SFilter.ALL) }
     var sort by rememberSaveable { mutableStateOf(SSort.entries.getOrElse(Repo.settings.sortMode) { SSort.DEFAULT }) }
     var query by rememberSaveable { mutableStateOf("") }
+    var country by rememberSaveable { mutableStateOf("") }
+    var countryOpen by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var sortOpen by remember { mutableStateOf(false) }
     var addSubOpen by remember { mutableStateOf(false) }
@@ -108,7 +114,10 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
     val list = rememberLazyListState()
     val scrolled by remember { derivedStateOf { list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > 60 } }
 
-    val shown = remember(servers, filter, sort, query) { filterSort(servers, filter, sort, query) }
+    val shown = remember(servers, filter, sort, query, country) { filterSort(servers, filter, sort, query, country) }
+    val countries = remember(servers) {
+        servers.groupingBy { it.realCountry() }.eachCount().filterKeys { it.length == 2 }.toList().sortedByDescending { it.second }
+    }
     val counts = remember(servers) { SFilter.entries.associateWith { f -> filterSort(servers, f, SSort.DEFAULT, "").size } }
 
     val pasteAction: () -> Unit = {
@@ -251,7 +260,7 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
                 InputField(
                     value = query,
                     onValueChange = { query = it },
-                    placeholder = "Имя, адрес, протокол",
+                    placeholder = "Имя, IP или страна",
                     onCard = true,
                     leading = RayIcons.Search,
                     trailing = if (query.isNotEmpty()) {
@@ -270,6 +279,48 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    item(key = "country") {
+                        Box {
+                            Chip(
+                                if (country.isEmpty()) "Страна" else (ExitIp.flagOf(country) + " " + ExitIp.countryName(country)).trim(),
+                                selected = country.isNotEmpty(), small = true
+                            ) { countryOpen = true }
+                            DropdownMenu(expanded = countryOpen, onDismissRequest = { countryOpen = false }) {
+                                Text(
+                                    "ПО РЕАЛЬНОМУ IP", color = c.hint, fontSize = 11.sp, fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 2.dp)
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Все страны", fontSize = 15.sp) },
+                                    trailingIcon = {
+                                        if (country.isEmpty()) Icon(RayIcons.Check, contentDescription = null, tint = c.accent, modifier = Modifier.size(18.dp))
+                                    },
+                                    onClick = {
+                                        countryOpen = false
+                                        country = ""
+                                    }
+                                )
+                                countries.forEach { (cc, n) ->
+                                    DropdownMenuItem(
+                                        text = { Text((ExitIp.flagOf(cc) + "  " + ExitIp.countryName(cc)).trim(), fontSize = 15.sp) },
+                                        trailingIcon = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text("$n", color = c.hint, fontSize = 13.sp, style = TNum)
+                                                if (cc == country) {
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Icon(RayIcons.Check, contentDescription = null, tint = c.accent, modifier = Modifier.size(18.dp))
+                                                }
+                                            }
+                                        },
+                                        onClick = {
+                                            countryOpen = false
+                                            country = cc
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
                     items(SFilter.entries.toList()) { f ->
                         Chip(f.title, selected = filter == f, small = true, count = counts[f] ?: 0) { filter = f }
                     }
@@ -290,7 +341,7 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
             if (servers.isEmpty()) {
                 item(key = "empty") { EmptyServers(onPaste = pasteAction, onAddSub = { addSubOpen = true }) }
             } else {
-                if (filter == SFilter.ALL && query.isBlank() && subs.isNotEmpty()) {
+                if (filter == SFilter.ALL && query.isBlank() && country.isEmpty() && subs.isNotEmpty()) {
                     item(key = "subs") {
                         if (subs.size == 1) {
                             SubInfoCard(subs.first(), Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
@@ -401,7 +452,7 @@ fun ServerCard(
             Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = vPad, bottom = vPad),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            FlagBox(s.flagEmoji(), flag)
+            FlagBox(s.realFlag(), flag)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
@@ -410,6 +461,7 @@ fun ServerCard(
                     maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
                 val meta = buildList {
+                    if (s.exitIp.isNotEmpty()) add(s.exitIp)
                     add(s.protocolLabel().lowercase())
                     add(s.network)
                     if (!compact) add(s.securityLabel().lowercase())
@@ -423,6 +475,13 @@ fun ServerCard(
                     meta.joinToString(" · "), color = c.hint, fontSize = 12.sp, style = TNum,
                     maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
+                if (!compact && s.isFake()) {
+                    Text(
+                        "в названии " + ExitIp.countryName(s.claimedCountry()) + ", выход: " + ExitIp.countryName(s.exitCc),
+                        color = Mid, fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
                 if (!compact && s.isDead && s.lastError.isNotEmpty()) {
                     Text(
                         s.lastError, color = Bad, fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
