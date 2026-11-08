@@ -119,7 +119,7 @@ object Tun {
         token = tok
         LinuxHelper.send("start $tok ${ProcessHandle.current().pid()} " + json.replace('\n', ' ').replace('\r', ' '))
         val tail = LogTail(LinuxHelper.log, tok)
-        val end = System.currentTimeMillis() + 20_000
+        val end = System.currentTimeMillis() + 20_000L
         var ok = false
         while (System.currentTimeMillis() < end) {
             tail.poll()
@@ -179,7 +179,8 @@ object Tun {
                     }
                     if (len == pos) return
                     r.seek(pos)
-                    val bytes = ByteArray((len - pos).coerceAtMost(256 * 1024).toInt())
+                    val size = minOf(len - pos, 262_144L).toInt()
+                    val bytes = ByteArray(size)
                     r.readFully(bytes)
                     val text = String(bytes, Charsets.UTF_8)
                     val cut = text.lastIndexOf('\n')
@@ -191,11 +192,11 @@ object Tun {
                         ours = true
                         from = 1
                     }
-                    pos += text.substring(0, cut + 1).toByteArray(Charsets.UTF_8).size
+                    pos += text.substring(0, cut + 1).toByteArray(Charsets.UTF_8).size.toLong()
                     for (raw in lines.drop(from)) {
                         val line = raw.trim()
                         if (line.isEmpty()) continue
-                        if (line.contains("sing-box started") || important.containsMatchIn(line) ||
+                        if (line.contains("sing-box started") || Tun.important.containsMatchIn(line) ||
                             line.startsWith("Error") || line.startsWith("rayscope:")
                         ) {
                             Log.add("tun: " + line.take(400))
@@ -223,7 +224,7 @@ object Tun {
             token = null
             try {
                 LinuxHelper.send("stop $tok")
-                val end = System.currentTimeMillis() + 8_000
+                val end = System.currentTimeMillis() + 8_000L
                 while (System.currentTimeMillis() < end && LinuxHelper.running(tok)) Thread.sleep(100)
             } catch (e: Exception) {
                 Log.add("TUN: ${e.message}")
@@ -345,6 +346,9 @@ object LinuxHelper {
     /** Bump when tun-install.sh / tun-helper.sh change: a helper of an older version is replaced. */
     private const val VERSION = "1"
 
+    /** Separator of the arguments in /proc/PID/cmdline. */
+    private val NUL: Char = Char(0)
+
     private val uid: Int by lazy {
         try {
             File("/proc/self/status").readLines().firstOrNull { it.startsWith("Uid:") }
@@ -367,14 +371,14 @@ object LinuxHelper {
     }
 
     fun newToken(): String =
-        java.lang.Long.toHexString(rnd.nextLong() and Long.MAX_VALUE) + java.lang.Long.toHexString(System.nanoTime() and 0xffffff)
+        java.lang.Long.toHexString(rnd.nextLong() and Long.MAX_VALUE) + java.lang.Long.toHexString(System.nanoTime() and 0xffffffL)
 
     /** The helper of this boot is up and listening. */
     fun alive(): Boolean {
         if (Paths.isWindows || uid < 0) return false
         val pid = read(File(dir, "pid"))?.trim()?.toLongOrNull() ?: return false
         val cmd = try {
-            String(File("/proc/$pid/cmdline").readBytes(), Charsets.UTF_8).replace('', ' ')
+            String(File("/proc/$pid/cmdline").readBytes(), Charsets.UTF_8).replace(NUL, ' ')
         } catch (e: Exception) {
             return false
         }
@@ -388,7 +392,7 @@ object LinuxHelper {
         val st = state()
         if (st.size < 3 || st[0] != "run" || st[1] != tok) return false
         val pid = st[2].toLongOrNull() ?: return false
-        return ProcessHandle.of(pid).map { it.isAlive }.orElse(false)
+        return ProcessHandle.of(pid).map { it.isAlive }.orElse(false) == true
     }
 
     @Synchronized
@@ -423,11 +427,9 @@ object LinuxHelper {
             throw IOException("TUN не включён: окно пароля администратора не закрыто")
         }
         reader.join(1000)
-        when (val code = pr.exitValue()) {
-            0 -> Unit
-            126, 127 -> throw IOException("TUN не включён: пароль администратора не подтверждён")
-            else -> throw IOException("TUN: не удалось запустить помощник ($code) " + out.toString().trim().take(300))
-        }
+        val code = pr.exitValue()
+        if (code == 126 || code == 127) throw IOException("TUN не включён: пароль администратора не подтверждён")
+        if (code != 0) throw IOException("TUN: не удалось запустить помощник ($code) " + out.toString().trim().take(300))
         repeat(30) {
             if (alive()) {
                 Log.add("TUN: помощник запущен, до перезагрузки пароль больше не нужен")
@@ -452,12 +454,14 @@ object LinuxHelper {
         }
         t.join(3000)
         if (t.isAlive) throw IOException("помощник TUN не отвечает")
-        err.get()?.let { throw IOException("помощник TUN: ${it.message}") }
+        val e = err.get()
+        if (e != null) throw IOException("помощник TUN: " + e.message)
     }
 
-    private fun resource(name: String): String =
-        LinuxHelper::class.java.getResourceAsStream(name)?.use { String(it.readBytes(), Charsets.UTF_8) }
-            ?: throw IOException("нет $name в сборке")
+    private fun resource(name: String): String {
+        val stream = LinuxHelper::class.java.getResourceAsStream(name) ?: throw IOException("нет $name в сборке")
+        return stream.use { String(it.readBytes(), Charsets.UTF_8) }
+    }
 }
 
 /**
