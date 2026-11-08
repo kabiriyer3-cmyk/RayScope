@@ -1,107 +1,96 @@
 #!/usr/bin/env python3
-"""Draws the RayScope app icon: the R lettermark on a deep navy tile.
+"""Draws the RayScope app icon: the white R lettermark on a graphite tile.
 
-Geometric monogram on a 100-unit grid: a heavy P-shaped body with a round
-counter, plus a separate leg (the "ray") with a periwinkle-to-cyan gradient.
-Same geometry as shared/src/com/rayscope/fluid/Fluid.kt (object Mark) and the
-Android launcher icon. Pillow only, no numpy.
+The mark is one continuous line drawn as an R (see shared/src/com/rayscope/fluid/Logo.kt, object RayLogo):
+the same SVG path is embedded below. 16-32 px icons use the small optical cut (heavier line, wider gap).
+Pillow only. The .ico is written by hand with PNG entries, so every size gets its own render.
 
 Usage: make_icon.py OUT.ico [OUT.png]
 """
-import math
+import io
+import re
+import struct
 import sys
 
 from PIL import Image, ImageDraw
 
-S = 1024
-PAD = 32
-RADIUS = 236
-TILE_FROM = (35, 42, 82)
-TILE_TO = (11, 14, 26)
-INK = (244, 246, 255)
-RAY_FROM = (154, 166, 255)
-RAY_TO = (79, 214, 255)
+PATH = "M31.89 79L40 33C40.49 30.24 43.12 28 45.89 28L63.39 28C66.42 28 68.45 30.46 67.92 33.5C67.38 36.54 64.48 39 61.45 39C55.53 39 49.52 42.26 45.82 47.49C42.12 52.71 41.34 59.04 43.78 63.95L53.23 82.91C54.83 86.12 59.03 86.97 62.62 84.8C66.2 82.64 67.82 78.29 66.22 75.09L59.69 61.97C58.84 60.27 58.94 58.12 59.97 56.18C60.99 54.24 62.82 52.74 64.89 52.13C74.61 49.28 81.97 40.12 82.21 30.59C82.45 21.05 75.5 14 65.85 14L48.35 14C37.86 14 27.86 22.51 26 33L17.89 79C17.21 82.87 19.79 86 23.66 86C27.53 86 31.21 82.87 31.89 79Z"
+PATH_SMALL = "M30.52 78.25L38.37 33.75C38.78 31.4 41.02 29.5 43.37 29.5L65.37 29.5C67.99 29.5 69.74 31.63 69.28 34.25C68.82 36.87 66.32 39 63.69 39C57.5 39 51.21 42.42 47.34 47.89C43.47 53.35 42.64 59.98 45.2 65.12L53.9 82.58C55.67 86.13 60.32 87.07 64.29 84.68C68.26 82.28 70.05 77.46 68.28 73.92L62.91 63.13C62.08 61.46 62.16 59.36 63.13 57.45C64.1 55.54 65.85 54.02 67.87 53.36C77.76 50.09 85.04 40.58 85.09 30.85C85.15 21.12 77.97 14 68.1 14L46.1 14C35.19 14 24.79 22.84 22.87 33.75L15.02 78.25C14.27 82.53 17.13 86 21.41 86C25.69 86 29.77 82.53 30.52 78.25Z"
 
-# mark geometry (units), bounding box x 16..86, y 12..88, centre (51, 50)
-BOWL_C, BOWL_R = (50.0, 38.0), 26.0
-COUNTER_R = 9.5
-RAY = [(46, 69), (68, 69), (86, 88), (63, 88)]
-MARK_H = 76.0
+TILE = (15, 17, 21, 255)
+INK = (244, 245, 247, 255)
+EDGE = (255, 255, 255, 20)
+SS = 4  # supersampling
 
 
-def lerp(a, b, t):
-    return tuple(int(round(a[i] + (b[i] - a[i]) * t)) for i in range(3))
-
-
-def diagonal_mask(size):
-    """L image whose value grows from the top-left corner (0) to the bottom-right (255)."""
-    row = bytes(int(i * 255 / (2 * size - 2)) for i in range(2 * size - 1))
-    return Image.frombytes("L", (size, size), b"".join(row[y:y + size] for y in range(size)))
-
-
-def body_points(pt):
-    pts = [pt(16, 12), pt(50, 12)]
-    for i in range(1, 64):
-        a = -math.pi / 2 + math.pi * i / 64
-        pts.append(pt(BOWL_C[0] + BOWL_R * math.cos(a), BOWL_C[1] + BOWL_R * math.sin(a)))
-    pts += [pt(50, 64), pt(40, 64), pt(40, 88), pt(16, 88)]
+def polygon(d):
+    """Flattens an M/L/C/Z path into a list of points (100-unit box)."""
+    toks = re.findall(r"[MLCZ]|-?\d*\.?\d+", d)
+    pts, i, cur = [], 0, (0.0, 0.0)
+    while i < len(toks):
+        t = toks[i]
+        if t in "ML":
+            cur = (float(toks[i + 1]), float(toks[i + 2]))
+            pts.append(cur)
+            i += 3
+        elif t == "C":
+            p1 = (float(toks[i + 1]), float(toks[i + 2]))
+            p2 = (float(toks[i + 3]), float(toks[i + 4]))
+            p3 = (float(toks[i + 5]), float(toks[i + 6]))
+            for k in range(1, 25):
+                u = k / 24.0
+                m = 1 - u
+                pts.append((
+                    m ** 3 * cur[0] + 3 * m * m * u * p1[0] + 3 * m * u * u * p2[0] + u ** 3 * p3[0],
+                    m ** 3 * cur[1] + 3 * m * m * u * p1[1] + 3 * m * u * u * p2[1] + u ** 3 * p3[1],
+                ))
+            cur = p3
+            i += 7
+        else:
+            i += 1
     return pts
 
 
-def render():
-    tile = S - 2 * PAD
-    k = tile * 0.56 / MARK_H
-    ox = S / 2 - 51 * k
-    oy = S / 2 - 50 * k
+def render(size):
+    small = size <= 32
+    s = size * SS
+    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    pad = s * 0.03
+    d.rounded_rectangle([pad, pad, s - pad, s - pad], radius=s * 0.23, fill=TILE, outline=EDGE if not small else None,
+                        width=max(1, s // 256))
+    # glyph is 72 units tall, centred on (50, 50); it fills 56 % of the tile (62 % in the small cut)
+    k = s * (0.62 if small else 0.56) / 72.0
+    pts = [(s / 2 + (x - 50) * k, s / 2 + (y - 50) * k) for x, y in polygon(PATH_SMALL if small else PATH)]
+    d.polygon(pts, fill=INK)
+    lanczos = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
+    return img.resize((size, size), lanczos)
 
-    def pt(x, y):
-        return (ox + x * k, oy + y * k)
 
-    # tile: diagonal navy gradient inside a rounded square
-    tile_mask = Image.new("L", (S, S), 0)
-    ImageDraw.Draw(tile_mask).rounded_rectangle([PAD, PAD, S - PAD, S - PAD], radius=RADIUS, fill=255)
-    grad = Image.composite(Image.new("RGB", (S, S), TILE_TO), Image.new("RGB", (S, S), TILE_FROM), diagonal_mask(S))
-    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    img.paste(grad, (0, 0), tile_mask)
-
-    # body with the counter cut out
-    body = Image.new("L", (S, S), 0)
-    d = ImageDraw.Draw(body)
-    d.polygon(body_points(pt), fill=255)
-    cx, cy = pt(*BOWL_C)
-    r = COUNTER_R * k
-    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=0)
-    img.paste(Image.new("RGB", (S, S), INK), (0, 0), body)
-
-    # the ray: gradient along (46,69) -> (86,88)
-    ray_mask = Image.new("L", (S, S), 0)
-    ImageDraw.Draw(ray_mask).polygon([pt(*p) for p in RAY], fill=255)
-    x0, y0 = pt(46, 69)
-    x1, y1 = pt(86, 88)
-    dx, dy = x1 - x0, y1 - y0
-    dd = dx * dx + dy * dy
-    left, top, right, bottom = [int(v) for v in ray_mask.getbbox()]
-    w, h = right - left, bottom - top
-    ray = Image.new("RGB", (w, h))
-    px = ray.load()
-    for j in range(h):
-        for i in range(w):
-            t = ((left + i - x0) * dx + (top + j - y0) * dy) / dd
-            px[i, j] = lerp(RAY_FROM, RAY_TO, min(1.0, max(0.0, t)))
-    img.paste(ray, (left, top), ray_mask.crop((left, top, right, bottom)))
-    return img
+def write_ico(path, sizes):
+    blobs = []
+    for n in sizes:
+        b = io.BytesIO()
+        render(n).save(b, "PNG")
+        blobs.append((n, b.getvalue()))
+    head = struct.pack("<HHH", 0, 1, len(blobs))
+    offset = 6 + 16 * len(blobs)
+    entries, data = b"", b""
+    for n, png in blobs:
+        dim = 0 if n >= 256 else n
+        entries += struct.pack("<BBBBHHII", dim, dim, 0, 0, 1, 32, len(png), offset + len(data))
+        data += png
+    with open(path, "wb") as f:
+        f.write(head + entries + data)
 
 
 def main():
     if len(sys.argv) < 2:
         print("usage: make_icon.py OUT.ico [OUT.png]")
         sys.exit(2)
-    big = render()
-    lanczos = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
-    sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
-    big.resize((256, 256), lanczos).save(sys.argv[1], sizes=sizes)
+    write_ico(sys.argv[1], [16, 20, 24, 32, 40, 48, 64, 128, 256])
     if len(sys.argv) > 2:
-        big.resize((512, 512), lanczos).save(sys.argv[2])
+        render(512).save(sys.argv[2])
     print("icon written:", sys.argv[1])
 
 
