@@ -51,6 +51,8 @@ import com.rayscope.app.net.IpCheckResult
 import com.rayscope.app.net.IpInfo
 import com.rayscope.app.util.Fmt
 import com.rayscope.app.util.toast
+import com.rayscope.fluid.LiveIcon
+import com.rayscope.fluid.rememberIconFx
 import kotlinx.coroutines.launch
 
 /** kind: 0 info, 1 good, 2 bad, 3 running, 4 idle */
@@ -384,14 +386,19 @@ private fun IpCard(title: String, info: IpInfo?, err: String?, index: Int, dev: 
                         color = c.hint, fontSize = 13.sp
                     )
                 }
+                val copyFx = rememberIconFx()
                 Box(
                     Modifier.size(38.dp).clip(CircleShape).background(c.raised).clickable {
                         clipboard.setText(AnnotatedString(info.ip))
                         toast("IP скопирован")
+                        copyFx.fire(RayIcons.Copy)
                     },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(RayIcons.Copy, contentDescription = "Копировать", tint = c.accent, modifier = Modifier.size(17.dp))
+                    LiveIcon(
+                        RayIcons.Copy, c.accent, Modifier.size(17.dp), contentDescription = "Копировать",
+                        play = copyFx.plays, done = copyFx.done, doneTint = Good, motion = LocalUi.current.motion
+                    )
                 }
             }
             Hairline()
