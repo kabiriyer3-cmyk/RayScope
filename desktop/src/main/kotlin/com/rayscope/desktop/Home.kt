@@ -31,6 +31,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rayscope.fluid.LiveIcon
+import com.rayscope.fluid.rememberIconFx
 import com.rayscope.fluid.smoothPath
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -129,7 +131,7 @@ private fun ServerCard(st: Status, sel: Server?, servers: List<Server>, onGoServ
                 Spacer(Modifier.width(4.dp))
             }
         }
-        Icon(Ico.Arrow, contentDescription = null, tint = if (hovered) p.text else p.hint.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
+        LiveIcon(Ico.Arrow, if (hovered) p.text else p.hint.copy(alpha = 0.7f), Modifier.size(16.dp), hover = hovered)
     }
 }
 
@@ -314,7 +316,7 @@ private fun FastRow(s: Server, selected: Boolean, onClick: () -> Unit) {
         Spacer(Modifier.width(10.dp))
         Text(s.cleanName(), color = p.text, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         Box(Modifier.width(22.dp), contentAlignment = Alignment.Center) {
-            if (selected) Icon(Ico.Check, contentDescription = "выбран", tint = p.text, modifier = Modifier.size(15.dp))
+            if (selected) LiveIcon(Ico.Check, p.text, Modifier.size(15.dp), contentDescription = "выбран", appear = true)
         }
         SignalBars(s.delay)
         Box(Modifier.width(56.dp), contentAlignment = Alignment.CenterEnd) {
@@ -354,14 +356,15 @@ private fun ActionsCard(testing: Boolean, prog: Pair<Int, Int>, updating: Boolea
         }
         ActionRow(
             Ico.Activity, "Пинг всех", if (testing) "проверено " + prog.first + " из " + prog.second else "реальная задержка",
-            enabled = !testing, progress = if (testing && prog.second > 0) prog.first.toFloat() / prog.second else null
+            enabled = !testing, progress = if (testing && prog.second > 0) prog.first.toFloat() / prog.second else null,
+            busy = testing
         ) {
             Actions.go { Actions.testAll() }
         }
         ActionRow(Ico.ShieldCheck, "Проверка IP", "адрес, страна, сервисы", kbd = "Ctrl 3") { onGoCheck() }
         ActionRow(
             Ico.Refresh, "Подписки", if (updating) "обновляю…" else if (hasSubs) "обновить все" else "пока нет",
-            enabled = hasSubs && !updating, spinning = updating
+            enabled = hasSubs && !updating, busy = updating
         ) {
             Actions.go { Actions.updateAllSubs(silent = false) }
         }
@@ -376,21 +379,25 @@ private fun ActionRow(
     enabled: Boolean = true,
     kbd: String? = null,
     progress: Float? = null,
-    spinning: Boolean = false,
+    busy: Boolean = false,
     onClick: () -> Unit,
 ) {
     val p = pal
     val src = remember { MutableInteractionSource() }
     val hovered by src.collectIsHoveredAsState()
+    val fx = rememberIconFx()
     val bg by animateColorAsState(if (hovered && enabled) p.raised else p.raised.copy(alpha = 0f), tween(140), label = "actBg")
     val shape = RoundedCornerShape(14.dp)
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 6.dp).squish(src, enabled).alpha(if (enabled) 1f else 0.5f).clip(shape).background(bg)
-            .hoverable(src, enabled).clickable(interactionSource = src, indication = null, enabled = enabled, onClick = onClick).hand()
+            .hoverable(src, enabled).clickable(interactionSource = src, indication = null, enabled = enabled) {
+                onClick()
+                fx.fire(icon)
+            }.hand()
             .padding(horizontal = 8.dp, vertical = 7.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconBadge(icon, p.text, box = 32.dp, rotation = if (spinning) spin() else null)
+            IconBadge(icon, p.text, box = 32.dp, hover = hovered && enabled, play = fx.plays, busy = busy)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(title, color = p.text, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
@@ -399,7 +406,7 @@ private fun ActionRow(
             if (kbd != null) {
                 Kbd(kbd)
             } else {
-                Icon(Ico.Arrow, contentDescription = null, tint = if (hovered && enabled) p.text else p.hint.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
+                LiveIcon(Ico.Arrow, if (hovered && enabled) p.text else p.hint.copy(alpha = 0.6f), Modifier.size(16.dp), hover = hovered && enabled)
             }
         }
         if (progress != null) {
