@@ -1,6 +1,9 @@
 package com.rayscope.desktop
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -8,15 +11,15 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
@@ -25,12 +28,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
@@ -40,8 +50,11 @@ import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
@@ -52,10 +65,15 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.isTraySupported
 import androidx.compose.ui.window.rememberWindowState
+import com.rayscope.fluid.Fluid
+import com.rayscope.fluid.LogoTile
+import com.rayscope.fluid.PulseDot
+import com.rayscope.fluid.fluidSpan
 import com.sun.jna.Native
 import com.sun.jna.NativeLibrary
 import com.sun.jna.ptr.IntByReference
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.launch
 import java.awt.Dimension
 import java.awt.Frame
 import java.io.BufferedReader
@@ -175,7 +193,7 @@ fun main(args: Array<String>) {
         var visible by remember { mutableStateOf(!(toTray && tray)) }
         var raise by remember { mutableStateOf(0) }
         var page by remember { mutableStateOf(Page.entries.getOrElse(Store.prefs.value.startPage) { Page.HOME }) }
-        var palette by remember { mutableStateOf(false) }
+        var menuOpen by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) {
             UiSignals.show.collect {
                 visible = true
@@ -211,20 +229,20 @@ fun main(args: Array<String>) {
             visible = visible,
             title = "RayScope",
             icon = icon,
-            state = rememberWindowState(size = DpSize(1240.dp, 820.dp)),
+            state = rememberWindowState(size = DpSize(1260.dp, 840.dp)),
             onPreviewKeyEvent = { e ->
                 if (e.type != KeyEventType.KeyDown || !e.isCtrlPressed) {
                     false
                 } else {
                     when (e.key) {
                         Key.K -> {
-                            palette = !palette
+                            menuOpen = !menuOpen
                             true
                         }
-                        Key.One -> { page = Page.HOME; palette = false; true }
-                        Key.Two -> { page = Page.SERVERS; palette = false; true }
-                        Key.Three -> { page = Page.CHECK; palette = false; true }
-                        Key.Four -> { page = Page.SETTINGS; palette = false; true }
+                        Key.One -> { page = Page.HOME; menuOpen = false; true }
+                        Key.Two -> { page = Page.SERVERS; menuOpen = false; true }
+                        Key.Three -> { page = Page.CHECK; menuOpen = false; true }
+                        Key.Four -> { page = Page.SETTINGS; menuOpen = false; true }
                         else -> false
                     }
                 }
@@ -236,7 +254,7 @@ fun main(args: Array<String>) {
                 else -> isSystemInDarkTheme()
             }
             val caption = palette(dark, prefs.accent).side
-            LaunchedEffect(Unit) { window.minimumSize = Dimension(980, 680) }
+            LaunchedEffect(Unit) { window.minimumSize = Dimension(1000, 700) }
             LaunchedEffect(dark, visible) {
                 if (visible) WinChrome.apply(window, dark, caption)
             }
@@ -247,7 +265,7 @@ fun main(args: Array<String>) {
                     window.requestFocus()
                 }
             }
-            App(page, { page = it }, palette, { palette = it })
+            App(page, { page = it }, menuOpen, { menuOpen = it })
         }
     }
 }
@@ -264,11 +282,11 @@ private val NAV: List<Triple<Page, ImageVector, String>> = listOf(
     Triple(Page.HOME, Ico.Home, "1"),
     Triple(Page.SERVERS, Ico.Servers, "2"),
     Triple(Page.CHECK, Ico.Radar, "3"),
-    Triple(Page.SETTINGS, Ico.Sliders, "4"),
+    Triple(Page.SETTINGS, Ico.Settings, "4"),
 )
 
 @Composable
-fun App(page: Page, onPage: (Page) -> Unit, palette: Boolean, onPalette: (Boolean) -> Unit) {
+fun App(page: Page, onPage: (Page) -> Unit, menuOpen: Boolean, onMenu: (Boolean) -> Unit) {
     val prefs by Store.prefs.collectAsState()
     RayTheme(prefs.theme, prefs.accent) {
         val p = pal
@@ -281,11 +299,11 @@ fun App(page: Page, onPage: (Page) -> Unit, palette: Boolean, onPalette: (Boolea
         }
         Box(Modifier.fillMaxSize().background(p.bg)) {
             Row(Modifier.fillMaxSize()) {
-                Sidebar(page, prefs.dev, onPage) { onPalette(true) }
+                Sidebar(page, prefs.dev, onPage) { onMenu(true) }
                 Box(Modifier.width(1.dp).fillMaxHeight().background(p.stroke))
                 AnimatedContent(
                     targetState = page,
-                    transitionSpec = { fadeIn(tween(120)) togetherWith fadeOut(tween(80)) },
+                    transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(90)) },
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                     label = "page"
                 ) { pg ->
@@ -298,114 +316,179 @@ fun App(page: Page, onPage: (Page) -> Unit, palette: Boolean, onPalette: (Boolea
                     }
                 }
             }
-            if (palette) {
-                CommandMenu(onPage = onPage, onClose = { onPalette(false) })
+            if (menuOpen) {
+                CommandMenu(onPage = onPage, onClose = { onMenu(false) })
             }
             SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp)) { d ->
-                Snackbar(snackbarData = d, containerColor = p.raised, contentColor = p.text, shape = RoundedCornerShape(8.dp))
+                Snackbar(snackbarData = d, containerColor = p.raised, contentColor = p.text, shape = RoundedCornerShape(14.dp))
             }
         }
     }
 }
 
-/** Left rail: brand, command menu, pages, and the connection at the bottom. */
+// ------------------------------------------------------------------ sidebar
+
+private const val NAV_ROW = 40f
+private const val NAV_GAP = 4f
+
+/** Left rail: brand, command menu, pages with a fluid highlight, and the connection at the bottom. */
 @Composable
-private fun Sidebar(page: Page, dev: Boolean, onPage: (Page) -> Unit, onPalette: () -> Unit) {
+private fun Sidebar(page: Page, dev: Boolean, onPage: (Page) -> Unit, onMenu: () -> Unit) {
     val p = pal
     val st by Engine.status.collectAsState()
-    Column(Modifier.width(232.dp).fillMaxHeight().background(p.side).padding(horizontal = 10.dp, vertical = 12.dp)) {
-        Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            RayMark(Modifier.size(18.dp))
-            Spacer(Modifier.width(10.dp))
-            Text("RayScope", color = p.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text(APP_VERSION, color = p.hint, fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
+    Column(Modifier.width(248.dp).fillMaxHeight().background(p.side).padding(horizontal = 12.dp, vertical = 14.dp)) {
+        Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+            LogoTile(tile = 34.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("RayScope", color = p.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp, maxLines = 1)
+                Text(
+                    if (APP_VERSION.firstOrNull()?.isDigit() == true) "версия $APP_VERSION" else APP_VERSION,
+                    color = p.hint, fontSize = 11.5.sp, maxLines = 1, style = TNum
+                )
+            }
         }
-        val shape = RoundedCornerShape(6.dp)
-        Row(
-            Modifier.fillMaxWidth().clip(shape).border(1.dp, p.stroke, shape).press(onClick = onPalette)
-                .padding(horizontal = 8.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Ico.Search, contentDescription = null, tint = p.hint, modifier = Modifier.size(14.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Команды", color = p.hint, fontSize = 13.sp, modifier = Modifier.weight(1f))
-            Kbd("Ctrl K")
-        }
-        Spacer(Modifier.height(14.dp))
-        NAV.forEach { (pg, ic, key) ->
-            NavItem(ic, pg.title, page == pg || (pg == Page.SETTINGS && page == Page.LOG && !dev), key,
-                dot = if (pg == Page.HOME && st.state == ConnState.CONNECTED) Good else null) { onPage(pg) }
-        }
-        if (dev) {
-            NavItem(Ico.Logs, Page.LOG.title, page == Page.LOG, null, null) { onPage(Page.LOG) }
-        }
+        CommandButton(onMenu)
+        Spacer(Modifier.height(18.dp))
+        NavList(page, dev, st, onPage)
         Spacer(Modifier.weight(1f))
         ConnectionBlock(st)
     }
 }
 
 @Composable
-private fun NavItem(icon: ImageVector, label: String, selected: Boolean, key: String?, dot: Color?, onClick: () -> Unit) {
+private fun CommandButton(onClick: () -> Unit) {
     val p = pal
-    val shape = RoundedCornerShape(6.dp)
+    val src = remember { MutableInteractionSource() }
+    val hovered by src.collectIsHoveredAsState()
+    val line by animateColorAsState(if (hovered) p.accent.copy(alpha = 0.45f) else p.stroke, tween(160), label = "cmdLine")
+    val shape = RoundedCornerShape(12.dp)
     Row(
-        Modifier.fillMaxWidth().height(32.dp).clip(shape)
-            .background(if (selected) p.hover.copy(alpha = p.hover.alpha * 2.2f) else Color.Transparent)
-            .press(onClick = onClick).padding(horizontal = 8.dp),
+        Modifier.fillMaxWidth().height(38.dp).squish(src, depth = 0.98f).clip(shape).background(p.raised).border(1.dp, line, shape)
+            .hoverable(src).clickable(interactionSource = src, indication = null, onClick = onClick).hand()
+            .padding(start = 12.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = null, tint = if (selected) p.text else p.hint, modifier = Modifier.size(16.dp))
+        Icon(Ico.Search, contentDescription = null, tint = p.hint, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(10.dp))
-        Text(label, color = if (selected) p.text else p.hint, fontSize = 13.5.sp, fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal, modifier = Modifier.weight(1f))
-        if (dot != null) {
-            Box(Modifier.size(6.dp).clip(CircleShape).background(dot))
-            Spacer(Modifier.width(8.dp))
+        Text("Поиск и команды", color = p.hint, fontSize = 13.sp, maxLines = 1, modifier = Modifier.weight(1f))
+        Kbd("Ctrl K")
+    }
+}
+
+/**
+ * One highlight for the whole list, drawn behind fixed 40 dp rows: it stretches toward the new page and
+ * catches up (fluidSpan). Every row has the same icon box and label weight, so nothing shifts on select.
+ */
+@Composable
+private fun NavList(page: Page, dev: Boolean, st: Status, onPage: (Page) -> Unit) {
+    val p = pal
+    val items = if (dev) NAV + Triple(Page.LOG, Ico.Logs, "") else NAV
+    val target = items.indexOfFirst { it.first == page }.takeIf { it >= 0 } ?: items.indexOfFirst { it.first == Page.SETTINGS }
+    val top = target * (NAV_ROW + NAV_GAP)
+    val span = fluidSpan(top, top + NAV_ROW)
+    val fill = Brush.horizontalGradient(listOf(p.accent.copy(alpha = if (p.dark) 0.18f else 0.12f), p.accent2.copy(alpha = 0.04f)))
+    val bead = Brush.verticalGradient(listOf(p.accent, p.accent2))
+    Column(
+        Modifier.fillMaxWidth().drawBehind {
+            val y0 = span.start.value.dp.toPx()
+            val y1 = span.end.value.dp.toPx()
+            val r = 12.dp.toPx()
+            drawRoundRect(fill, Offset(0f, y0), Size(size.width, y1 - y0), CornerRadius(r, r))
+            val bw = 3.dp.toPx()
+            val inset = 11.dp.toPx()
+            val bh = (y1 - y0 - inset * 2f).coerceAtLeast(bw)
+            drawRoundRect(bead, Offset(0f, y0 + inset), Size(bw, bh), CornerRadius(bw / 2f, bw / 2f))
+        },
+        verticalArrangement = Arrangement.spacedBy(NAV_GAP.dp)
+    ) {
+        items.forEachIndexed { i, (pg, ic, key) ->
+            NavItem(
+                ic, pg.title, i == target, if (key.isEmpty()) null else "Ctrl $key",
+                dot = if (pg == Page.HOME && st.state == ConnState.CONNECTED) Good else null
+            ) { onPage(pg) }
         }
-        if (key != null) Text("Ctrl $key", color = p.hint.copy(alpha = 0.6f), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
     }
 }
 
 @Composable
-private fun Kbd(text: String) {
+private fun NavItem(icon: ImageVector, label: String, selected: Boolean, key: String?, dot: Color?, onClick: () -> Unit) {
     val p = pal
-    val shape = RoundedCornerShape(4.dp)
-    Text(
-        text, color = p.hint, fontSize = 10.5.sp, fontFamily = FontFamily.Monospace,
-        modifier = Modifier.clip(shape).border(1.dp, p.stroke, shape).padding(horizontal = 5.dp, vertical = 1.dp)
-    )
+    val src = remember { MutableInteractionSource() }
+    val hovered by src.collectIsHoveredAsState()
+    val fg by animateColorAsState(if (selected || hovered) p.text else p.hint, tween(160), label = "navFg")
+    val ic by animateColorAsState(if (selected) p.accent else if (hovered) p.text else p.hint, tween(160), label = "navIcon")
+    val hoverBg by animateColorAsState(if (hovered && !selected) p.hover else p.hover.copy(alpha = 0f), tween(140), label = "navHover")
+    val keyAlpha by animateFloatAsState(if (hovered) 1f else 0f, tween(160), label = "navKey")
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        Modifier.fillMaxWidth().height(NAV_ROW.dp).squish(src, depth = 0.98f).clip(shape).background(hoverBg)
+            .hoverable(src).clickable(interactionSource = src, indication = null, onClick = onClick).hand()
+            .padding(start = 14.dp, end = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, tint = ic, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(label, color = fg, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, maxLines = 1, modifier = Modifier.weight(1f))
+        if (dot != null) {
+            PulseDot(dot, dot = 6.dp)
+            Spacer(Modifier.width(10.dp))
+        }
+        if (key != null) Kbd(key, Modifier.alpha(keyAlpha))
+    }
 }
 
 @Composable
 private fun ConnectionBlock(st: Status) {
     val p = pal
-    val dot = when (st.state) {
-        ConnState.CONNECTED -> Good
-        ConnState.STOPPED -> p.hint.copy(alpha = 0.6f)
-        else -> Mid
+    val servers by Store.servers.collectAsState()
+    val selId by Store.selectedId.collectAsState()
+    val sel = remember(servers, selId) { Store.selected() }
+    val srv = remember(servers, st.serverId, sel) { st.serverId?.let { id -> servers.firstOrNull { it.id == id } } ?: sel }
+    val connected = st.state == ConnState.CONNECTED
+    val busy = st.state == ConnState.CONNECTING || st.state == ConnState.STOPPING
+    val dot = when {
+        connected -> Good
+        busy -> Mid
+        else -> p.hint.copy(alpha = 0.6f)
     }
-    Column(Modifier.fillMaxWidth().card(p, 16.dp).padding(12.dp)) {
+    val name = if (st.state == ConnState.STOPPED) sel?.cleanName().orEmpty() else st.serverName.ifEmpty { srv?.cleanName().orEmpty() }
+    Column(Modifier.fillMaxWidth().card(p, 18.dp).padding(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(7.dp).clip(CircleShape).background(dot))
-            Spacer(Modifier.width(8.dp))
-            Text(stateText(st.state), color = p.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            PulseDot(dot, dot = 7.dp, live = connected || busy)
+            Spacer(Modifier.width(10.dp))
+            Text(stateText(st.state), color = p.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.weight(1f))
+            if (connected && st.livePing >= 0) {
+                Text("${st.livePing} ms", color = delayColor(st.livePing), fontSize = 12.sp, fontWeight = FontWeight.Medium, style = TNum)
+            }
         }
-        val name = if (st.state == ConnState.STOPPED) Store.selected()?.cleanName().orEmpty() else st.serverName
         if (name.isNotEmpty()) {
-            Text(name, color = p.hint, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp, start = 15.dp))
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FlagBox(srv?.countryCode().orEmpty(), 22.dp)
+                Spacer(Modifier.width(9.dp))
+                Text(name, color = p.hint, fontSize = 12.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
         Btn(
             if (st.state == ConnState.STOPPED) "Подключить" else "Отключить",
             { Engine.toggle() },
             Modifier.fillMaxWidth(),
             primary = st.state == ConnState.STOPPED,
             icon = Ico.Power,
-            enabled = st.state != ConnState.STOPPING
+            enabled = st.state != ConnState.STOPPING && (sel != null || st.state != ConnState.STOPPED)
         )
     }
 }
 
+// ------------------------------------------------------------------ command menu
+
 private class Command(val title: String, val hint: String, val icon: ImageVector, val run: () -> Unit)
+
+private const val CMD_ROW = 42f
 
 /** Ctrl+K: type to filter, arrows to move, Enter to run, Esc to close. Server names are commands too. */
 @Composable
@@ -414,10 +497,17 @@ private fun CommandMenu(onPage: (Page) -> Unit, onClose: () -> Unit) {
     val st by Engine.status.collectAsState()
     val servers by Store.servers.collectAsState()
     var query by remember { mutableStateOf("") }
-    var index by remember { mutableStateOf(0) }
+    var index by remember { mutableIntStateOf(0) }
     val focus = remember { FocusRequester() }
-    val list = rememberLazyListState()
-    LaunchedEffect(Unit) { focus.requestFocus() }
+    val scroll = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    val rowPx = with(LocalDensity.current) { CMD_ROW.dp.toPx() }
+    var viewport by remember { mutableIntStateOf(0) }
+    val appear = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        focus.requestFocus()
+        appear.animateTo(1f, Fluid.jelly())
+    }
 
     val base = listOf(
         Command(if (st.state == ConnState.STOPPED) "Подключить" else "Отключить", "VPN", Ico.Power) { Engine.toggle() },
@@ -433,15 +523,19 @@ private fun CommandMenu(onPage: (Page) -> Unit, onClose: () -> Unit) {
             }
         },
         Command("Пинг всех серверов", "реальная задержка", Ico.Activity) { Actions.go { Actions.testAll() } },
-        Command("Обновить подписки", "все", Ico.Download) { Actions.go { Actions.updateAllSubs(silent = false) } },
+        Command("Обновить подписки", "все", Ico.Refresh) { Actions.go { Actions.updateAllSubs(silent = false) } },
+        Command("Проверить IP", "адрес и страна", Ico.ShieldCheck) {
+            onPage(Page.CHECK)
+            Actions.go { IpCheck.run() }
+        },
         Command("Системный прокси", "режим", Ico.Globe) { Engine.setMode(1) },
         Command("Только локальный прокси", "режим", Ico.Link) { Engine.setMode(0) },
-        Command("Главная", "перейти", Ico.Home) { onPage(Page.HOME) },
-        Command("Серверы", "перейти", Ico.Servers) { onPage(Page.SERVERS) },
-        Command("Проверка IP", "перейти", Ico.Radar) { onPage(Page.CHECK) },
-        Command("Настройки", "перейти", Ico.Sliders) { onPage(Page.SETTINGS) },
-        Command("Тёмная тема", "оформление", Ico.Layers) { Store.setPrefs { it.copy(theme = 2) } },
-        Command("Светлая тема", "оформление", Ico.Layers) { Store.setPrefs { it.copy(theme = 1) } },
+        Command("Главная", "Ctrl 1", Ico.Home) { onPage(Page.HOME) },
+        Command("Серверы", "Ctrl 2", Ico.Servers) { onPage(Page.SERVERS) },
+        Command("Проверка", "Ctrl 3", Ico.Radar) { onPage(Page.CHECK) },
+        Command("Настройки", "Ctrl 4", Ico.Settings) { onPage(Page.SETTINGS) },
+        Command("Тёмная тема", "оформление", Ico.Moon) { Store.setPrefs { it.copy(theme = 2) } },
+        Command("Светлая тема", "оформление", Ico.Sun) { Store.setPrefs { it.copy(theme = 1) } },
         Command("Тема как в системе", "оформление", Ico.Layers) { Store.setPrefs { it.copy(theme = 0) } },
     )
     val q = query.trim()
@@ -452,8 +546,23 @@ private fun CommandMenu(onPage: (Page) -> Unit, onClose: () -> Unit) {
         }
         cmds + srv
     }
-    LaunchedEffect(shown.size) { index = 0 }
-    LaunchedEffect(index) { if (shown.isNotEmpty()) list.animateScrollToItem(index.coerceIn(0, shown.size - 1)) }
+    LaunchedEffect(shown.size, q) {
+        index = 0
+        scroll.scrollTo(0)
+    }
+    val span = fluidSpan(index * CMD_ROW, index * CMD_ROW + CMD_ROW)
+    val hl = Brush.horizontalGradient(listOf(p.accent.copy(alpha = if (p.dark) 0.2f else 0.13f), p.accent2.copy(alpha = 0.05f)))
+    fun ensureVisible(i: Int) {
+        val top = (i * rowPx).toInt()
+        val bottom = top + rowPx.toInt()
+        scope.launch {
+            if (top < scroll.value) {
+                scroll.animateScrollTo(top)
+            } else if (viewport > 0 && bottom > scroll.value + viewport) {
+                scroll.animateScrollTo(bottom - viewport)
+            }
+        }
+    }
     val runAt: (Int) -> Unit = { i ->
         shown.getOrNull(i)?.let {
             onClose()
@@ -462,35 +571,50 @@ private fun CommandMenu(onPage: (Page) -> Unit, onClose: () -> Unit) {
     }
 
     Box(
-        Modifier.fillMaxSize().background(Color.Black.copy(alpha = if (p.dark) 0.45f else 0.18f))
+        Modifier.fillMaxSize().background(Color.Black.copy(alpha = if (p.dark) 0.5f else 0.2f))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose),
         contentAlignment = Alignment.TopCenter
     ) {
-        val shape = RoundedCornerShape(10.dp)
+        val shape = RoundedCornerShape(18.dp)
         Column(
-            Modifier.padding(top = 96.dp).width(580.dp).shadow(24.dp, shape).clip(shape).background(p.surface).border(1.dp, p.stroke, shape)
+            Modifier.padding(top = 92.dp).width(600.dp)
+                .graphicsLayer {
+                    val k = appear.value
+                    alpha = k.coerceIn(0f, 1f)
+                    scaleX = 0.94f + 0.06f * k
+                    scaleY = 0.94f + 0.06f * k
+                    translationY = (1f - k) * -12.dp.toPx()
+                }
+                .shadow(32.dp, shape).clip(shape).background(p.surface).border(1.dp, p.stroke, shape)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
         ) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Ico.Search, contentDescription = null, tint = p.hint, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(10.dp))
-                Box(Modifier.weight(1f)) {
-                    if (query.isEmpty()) Text("Команда или сервер", color = p.hint.copy(alpha = 0.7f), fontSize = 15.sp)
+            Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Ico.Search, contentDescription = null, tint = p.accent, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(12.dp))
+                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                    val ts = TextStyle(color = p.text, fontSize = 15.sp)
+                    if (query.isEmpty()) Text("Команда или сервер", style = ts.copy(color = p.hint.copy(alpha = 0.7f)))
                     BasicTextField(
                         value = query,
                         onValueChange = { query = it },
                         singleLine = true,
-                        textStyle = TextStyle(color = p.text, fontSize = 15.sp),
+                        textStyle = ts,
                         cursorBrush = SolidColor(p.accent),
                         modifier = Modifier.fillMaxWidth().focusRequester(focus).onPreviewKeyEvent { e ->
                             if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                             when (e.key) {
                                 Key.DirectionDown -> {
-                                    if (shown.isNotEmpty()) index = (index + 1) % shown.size
+                                    if (shown.isNotEmpty()) {
+                                        index = (index + 1) % shown.size
+                                        ensureVisible(index)
+                                    }
                                     true
                                 }
                                 Key.DirectionUp -> {
-                                    if (shown.isNotEmpty()) index = (index - 1 + shown.size) % shown.size
+                                    if (shown.isNotEmpty()) {
+                                        index = (index - 1 + shown.size) % shown.size
+                                        ensureVisible(index)
+                                    }
                                     true
                                 }
                                 Key.Enter, Key.NumPadEnter -> {
@@ -510,26 +634,73 @@ private fun CommandMenu(onPage: (Page) -> Unit, onClose: () -> Unit) {
             }
             Line()
             if (shown.isEmpty()) {
-                Text("Ничего не нашлось", color = p.hint, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
+                Column(Modifier.fillMaxWidth().padding(vertical = 30.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Ico.Search, contentDescription = null, tint = p.hint.copy(alpha = 0.6f), modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.height(10.dp))
+                    Text("Ничего не нашлось", color = p.text, fontSize = 13.5.sp, fontWeight = FontWeight.Medium)
+                    Text("Попробуйте другое слово или имя сервера", color = p.hint, fontSize = 12.sp)
+                }
             } else {
-                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 380.dp).padding(6.dp), state = list) {
-                    itemsIndexed(shown) { i, c ->
-                        val sel = i == index
-                        Row(
-                            Modifier.fillMaxWidth().height(36.dp).clip(RoundedCornerShape(6.dp))
-                                .background(if (sel) p.hover.copy(alpha = p.hover.alpha * 2.2f) else Color.Transparent)
-                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { runAt(i) }
-                                .hand().padding(horizontal = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                Box(Modifier.fillMaxWidth().heightIn(max = 392.dp).padding(6.dp).onSizeChanged { viewport = it.height }) {
+                    Column(Modifier.fillMaxWidth().verticalScroll(scroll)) {
+                        Column(
+                            Modifier.fillMaxWidth().drawBehind {
+                                val y0 = span.start.value.dp.toPx()
+                                val y1 = span.end.value.dp.toPx()
+                                val r = 12.dp.toPx()
+                                drawRoundRect(hl, Offset(0f, y0), Size(size.width, y1 - y0), CornerRadius(r, r))
+                            }
                         ) {
-                            Icon(c.icon, contentDescription = null, tint = if (sel) p.text else p.hint, modifier = Modifier.size(15.dp))
-                            Spacer(Modifier.width(12.dp))
-                            Text(c.title, color = p.text, fontSize = 13.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                            Text(c.hint, color = p.hint, fontSize = 12.sp, maxLines = 1)
+                            shown.forEachIndexed { i, c ->
+                                CommandRow(c, i == index, onHover = { index = i }) { runAt(i) }
+                            }
                         }
                     }
                 }
             }
+            Line()
+            Row(Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Kbd("↑ ↓")
+                Text("  выбрать", color = p.hint, fontSize = 12.sp)
+                Spacer(Modifier.width(16.dp))
+                Kbd("Enter")
+                Text("  запустить", color = p.hint, fontSize = 12.sp)
+                Spacer(Modifier.weight(1f))
+                Text("Результатов: ${shown.size}", color = p.hint.copy(alpha = 0.8f), fontSize = 12.sp, style = TNum)
+            }
         }
+    }
+}
+
+@Composable
+private fun CommandRow(c: Command, selected: Boolean, onHover: () -> Unit, onClick: () -> Unit) {
+    val p = pal
+    val hover = rememberUpdatedState(onHover)
+    val fg by animateColorAsState(if (selected) p.text else p.text.copy(alpha = 0.82f), tween(120), label = "cmdFg")
+    val ic by animateColorAsState(if (selected) p.accent else p.hint, tween(120), label = "cmdIcon")
+    val enter by animateFloatAsState(if (selected) 1f else 0f, tween(120), label = "cmdEnter")
+    Row(
+        Modifier.fillMaxWidth().height(CMD_ROW.dp)
+            .pointerInput(Unit) {
+                // a real mouse move picks the row; rows sliding under a still pointer during keyboard scroll do not
+                awaitPointerEventScope {
+                    while (true) {
+                        val e = awaitPointerEvent()
+                        if (e.type == PointerEventType.Move) hover.value()
+                    }
+                }
+            }
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick).hand()
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+            Icon(c.icon, contentDescription = null, tint = ic, modifier = Modifier.size(18.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(c.title, color = fg, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Text(c.hint, color = p.hint, fontSize = 12.sp, maxLines = 1, style = TNum)
+        Spacer(Modifier.width(10.dp))
+        Kbd("Enter", Modifier.alpha(enter))
     }
 }
