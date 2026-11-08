@@ -1,6 +1,7 @@
 /*
  * RayScope.exe: starts the bundled Java runtime with the app, without a console window.
  * Layout next to the exe: runtime/ (JRE), lib/ (app jars), core/ (xray.exe).
+ * Command line arguments (for example --tray from autostart) are passed through to the app.
  * Built on the CI runner with mingw-w64 (see ci/desktop.sh).
  */
 #define WIN32_LEAN_AND_MEAN
@@ -25,7 +26,6 @@ static void fail(const wchar_t *text) {
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, LPWSTR args, int show) {
     (void)inst;
     (void)prev;
-    (void)args;
     (void)show;
 
     DWORD n = GetModuleFileNameW(NULL, dir, BUF);
@@ -67,6 +67,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, LPWSTR args, int show) {
     lstrcatW(cmd, L"*");
     lstrcatW(cmd, QT);
     lstrcatW(cmd, L" com.rayscope.desktop.MainKt");
+    if (args && args[0] && lstrlenW(cmd) + lstrlenW(args) + 2 < BUF) {
+        lstrcatW(cmd, L" ");
+        lstrcatW(cmd, args);
+    }
 
     STARTUPINFOW si;
     PROCESS_INFORMATION pi;
