@@ -181,7 +181,15 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
             }
 
             Group("Проверки", modifier = Modifier.appear(1)) {
-                PrefRow(RayIcons.Activity, Good, "Задержка", value = Fmt.ms(s.delay))
+                PrefRow(
+                    RayIcons.Activity, Good,
+                    when (s.pingKind) {
+                        1 -> "TCP-пинг"
+                        2 -> "ICMP-пинг"
+                        else -> "Задержка"
+                    },
+                    value = Fmt.ms(s.delay)
+                )
                 if (dev) {
                     PrefRow(RayIcons.Signal, Blue, "TCP-пинг", value = if (s.protocol == "hysteria2") "н/д (UDP)" else Fmt.ms(s.tcpPing))
                 }
@@ -237,6 +245,7 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                     if (s.insecure) KV("allowInsecure", "да", Mid)
                     if (s.obfsPassword.isNotEmpty()) KV("Obfs", "salamander", mono = true)
                     KV("Источник", sub?.name ?: "добавлен вручную")
+                    if (s.outbound.isNotEmpty()) KV("Конфиг", "Xray JSON, как в подписке")
                 }
             } else {
                 Group("Параметры", modifier = Modifier.appear(3)) {
@@ -245,6 +254,7 @@ private fun ServerDetail(s: Server, onBack: () -> Unit, onConnect: () -> Unit) {
                     KV("Защита", s.securityLabel())
                     KVIf("SNI", s.sni, mono = true)
                     KV("Источник", sub?.name ?: "добавлен вручную")
+                    if (s.outbound.isNotEmpty()) KV("Конфиг", "Xray JSON, как в подписке")
                 }
             }
 
