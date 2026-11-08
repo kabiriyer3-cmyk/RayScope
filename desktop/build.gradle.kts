@@ -7,6 +7,11 @@ plugins {
 
 version = System.getenv("VERSION_NAME") ?: "0.0.0"
 
+// Fluid UI kit, lettermark and glyphs shared with the Android app
+kotlin {
+    sourceSets.getByName("main").kotlin.srcDir("../shared/src")
+}
+
 dependencies {
     implementation(compose.desktop.windows_x64)
     implementation(compose.desktop.linux_x64)
