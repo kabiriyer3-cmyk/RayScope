@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rayscope.fluid.LiveIcon
+import com.rayscope.sub.ExitIp
 
 val SORT_NAMES = listOf("Как в подписке", "По пингу", "По имени", "По стабильности")
 private val FILTERS = listOf("Все", "Рабочие", "Нерабочие", "Не проверены", "Избранные")
@@ -55,9 +56,11 @@ fun ServersScreen() {
     var sortMenu by remember { mutableStateOf(false) }
     var addSub by remember { mutableStateOf(false) }
     var confirmDead by remember { mutableStateOf(false) }
+    var country by remember { mutableStateOf("") }
+    var countryMenu by remember { mutableStateOf(false) }
 
     val sortMode = prefs.sortMode.coerceIn(0, SORT_NAMES.size - 1)
-    val shown = remember(servers, query, filter, sortMode) {
+    val shown = remember(servers, query, filter, sortMode, country) {
         val q = query.trim().lowercase()
         var l = servers.filter { s ->
             when (filter) {
@@ -68,8 +71,13 @@ fun ServersScreen() {
                 else -> true
             }
         }
+        // the real exit country once a check found it, the one from the name until then
+        if (country.isNotEmpty()) l = l.filter { it.realCountry() == country }
         if (q.isNotEmpty()) {
-            l = l.filter { it.name.lowercase().contains(q) || it.address.lowercase().contains(q) || it.protocol.contains(q) }
+            l = l.filter {
+                it.name.lowercase().contains(q) || it.address.lowercase().contains(q) || it.protocol.contains(q) ||
+                    ExitIp.matches(q, it.exitIp, it.realCountry())
+            }
         }
         when (sortMode) {
             1 -> l.sortedWith(compareBy<Server>({ if (it.isWorking) 0 else if (it.isUntested) 1 else 2 }, { it.delay }))
@@ -85,6 +93,9 @@ fun ServersScreen() {
         servers.count { it.isUntested },
         servers.count { it.favorite },
     )
+    val countries = remember(servers) {
+        servers.groupingBy { it.realCountry() }.eachCount().filterKeys { it.length == 2 }.toList().sortedByDescending { it.second }
+    }
     val effSel = selId ?: servers.firstOrNull()?.id
     val open = openId?.let { id -> servers.firstOrNull { it.id == id } }
 
@@ -165,7 +176,7 @@ fun ServersScreen() {
                 EmptyServers { addSub = true }
             } else {
                 Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Field(query, { query = it }, "Поиск", Modifier.weight(1f), leading = Ico.Search, onCard = false)
+                    Field(query, { query = it }, "Имя, IP или страна", Modifier.weight(1f), leading = Ico.Search, onCard = false)
                     Spacer(Modifier.width(6.dp))
                     Box {
                         IconBtn(Ico.Sort, "Сортировка: " + SORT_NAMES[sortMode], { sortMenu = true }, size = 36.dp)
@@ -184,6 +195,24 @@ fun ServersScreen() {
                     Modifier.fillMaxWidth().mouseSideways(chipScroll).horizontalScroll(chipScroll).padding(bottom = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    Box {
+                        RChip(if (country.isEmpty()) "Страна" else ExitIp.countryName(country), country.isNotEmpty(), icon = Ico.Globe) {
+                            countryMenu = true
+                        }
+                        DropdownMenu(expanded = countryMenu, onDismissRequest = { countryMenu = false }) {
+                            Caps("По реальному IP, где он уже известен", Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp))
+                            CheckItem("Все страны", country.isEmpty()) {
+                                countryMenu = false
+                                country = ""
+                            }
+                            countries.forEach { (cc, n) ->
+                                CountryItem(cc, n, cc == country) {
+                                    countryMenu = false
+                                    country = cc
+                                }
+                            }
+                        }
+                    }
                     FILTERS.forEachIndexed { i, f ->
                         RChip(f, filter == i, counts[i], icon = if (i == 4) Ico.StarFilled else null) { filter = i }
                     }
@@ -281,6 +310,30 @@ private fun CheckItem(text: String, checked: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
+private fun CountryItem(cc: String, count: Int, checked: Boolean, onClick: () -> Unit) {
+    val p = pal
+    DropdownMenuItem(
+        text = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    ExitIp.countryName(cc), fontSize = 14.sp, fontWeight = if (checked) FontWeight.SemiBold else FontWeight.Normal,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false)
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(count.toString(), color = p.hint, fontSize = 12.5.sp, style = TNum)
+            }
+        },
+        onClick = onClick,
+        leadingIcon = { FlagBox(cc, 20.dp) },
+        trailingIcon = {
+            Box(Modifier.size(16.dp)) {
+                if (checked) LiveIcon(Ico.Check, p.accent, Modifier.size(16.dp), appear = true)
+            }
+        }
+    )
+}
+
+@Composable
 private fun ServerRow(
     s: Server,
     selected: Boolean,
@@ -306,7 +359,7 @@ private fun ServerRow(
             .padding(start = 10.dp, end = 6.dp, top = if (compact) 6.dp else 10.dp, bottom = if (compact) 6.dp else 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        FlagBox(s.countryCode(), if (compact) 28.dp else 36.dp)
+        FlagBox(s.realCountry(), if (compact) 28.dp else 36.dp)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -325,6 +378,7 @@ private fun ServerRow(
             if (!compact) {
                 Spacer(Modifier.height(3.dp))
                 val meta = buildList {
+                    if (s.exitIp.isNotEmpty()) add(s.exitIp)
                     add(s.protocolLabel())
                     add(s.network.uppercase())
                     add(s.securityLabel())
@@ -335,6 +389,12 @@ private fun ServerRow(
                     if (s.pingKind != 0 && s.delay >= 0) add("пинг " + Tester.KINDS[s.pingKind.coerceIn(0, 2)])
                 }.joinToString(" · ")
                 Text(meta, color = p.hint, fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, style = TNum)
+                if (s.isFake()) {
+                    Text(
+                        "В названии " + ExitIp.countryName(s.countryCode()) + ", выход: " + ExitIp.countryName(s.exitCc),
+                        color = Mid, fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
+                }
                 if (dev && s.isDead && s.lastError.isNotEmpty()) {
                     Text(s.lastError, color = Bad, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -479,7 +539,7 @@ private fun DetailPanel(s: Server, subs: List<Subscription>, dev: Boolean, st: S
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            FlagBox(s.countryCode(), 42.dp)
+            FlagBox(s.realCountry(), 42.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(s.cleanName(), color = p.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -499,7 +559,8 @@ private fun DetailPanel(s: Server, subs: List<Subscription>, dev: Boolean, st: S
                     testing = true
                     Actions.go {
                         try {
-                            Actions.testOne(s.id)
+                            // one server: the honest check through the core, which also finds the real exit
+                            Actions.testOne(s.id, 0)
                         } finally {
                             testing = false
                         }
@@ -518,6 +579,31 @@ private fun DetailPanel(s: Server, subs: List<Subscription>, dev: Boolean, st: S
             KV("Стабильность", if (stab < 0) "" else "$stab% (" + s.successCount + " из " + (s.successCount + s.failCount) + ")")
             KV("Проверен", Fmt.ago(s.lastTested))
             if (s.lastError.isNotEmpty()) KV("Ошибка", s.lastError, Bad)
+        }
+        Section(
+            "Реальный выход",
+            footer = if (s.exitIp.isEmpty()) "Узнаётся при проверке через ядро: нажмите «Проверить»"
+            else "Этот адрес видят сайты, когда вы подключены к серверу"
+        ) {
+            if (s.exitIp.isEmpty()) {
+                KV("IP", "ещё не проверяли")
+            } else {
+                val claimed = s.countryCode()
+                KV("IP", s.exitIp, mono = true)
+                KV("Страна", if (s.exitCc.isEmpty()) "не определена" else ExitIp.countryName(s.exitCc), if (s.isFake()) Mid else Color.Unspecified)
+                if (claimed.isNotEmpty()) KV("В названии", ExitIp.countryName(claimed))
+                KV("Проверен", Fmt.ago(s.exitAt))
+                if (s.isFake()) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                        Icon(Ico.Alert, contentDescription = null, tint = Mid, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            "Сервер подписан как " + ExitIp.countryName(claimed) + ", а сайты увидят " + ExitIp.countryName(s.exitCc),
+                            color = p.text, fontSize = 13.sp, lineHeight = 18.sp
+                        )
+                    }
+                }
+            }
         }
         val source = subs.firstOrNull { it.id == s.subId }?.name?.ifEmpty { null } ?: "добавлен вручную"
         val sec = s.security.lowercase()
