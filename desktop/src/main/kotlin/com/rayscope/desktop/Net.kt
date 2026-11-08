@@ -12,6 +12,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.Socket
@@ -69,6 +70,40 @@ object Tester {
         "Apple" to "https://captive.apple.com/hotspot-detect.html",
         "Яндекс" to "https://ya.ru/",
     )
+
+    /** Ping kinds: 0 a full request through the core, 1 TCP handshake with the server port, 2 ICMP echo. */
+    val KINDS = listOf("HTTP", "TCP", "ICMP")
+
+    /** The same kinds as offered in the settings and menus. */
+    val KIND_NAMES = listOf("HTTP через ядро", "TCP", "ICMP")
+
+    private val windows = System.getProperty("os.name", "").lowercase().contains("win")
+
+    /** "время=45мс TTL=56", "time<1ms TTL=128", "temps=12 ms TTL=55": every Windows language keeps the TTL token. */
+    private val PING_TIME = Regex("[=<]\\s*(\\d+)\\s*\\S*\\s+TTL=", RegexOption.IGNORE_CASE)
+
+    /**
+     * ICMP echo to the server, like the ping command (Windows lets any user send it), -1 if there is no reply.
+     * The name is resolved first: DNS time is not part of the result.
+     */
+    fun icmp(s: Server, timeout: Int): Long {
+        val t = timeout.coerceIn(300, 10_000)
+        return try {
+            val ip = InetAddress.getByName(s.address)
+            val text = ip.hostAddress
+            if (windows && !text.contains(':')) {
+                val pr = ProcessBuilder("ping", "-n", "1", "-w", t.toString(), text).redirectErrorStream(true).start()
+                val out = pr.inputStream.bufferedReader().use { it.readText() }
+                pr.waitFor()
+                PING_TIME.find(out)?.groupValues?.get(1)?.toLongOrNull() ?: -1L
+            } else {
+                val t0 = System.nanoTime()
+                if (ip.isReachable(t)) (System.nanoTime() - t0) / 1_000_000 else -1L
+            }
+        } catch (e: Exception) {
+            -1L
+        }
+    }
 
     fun tcp(s: Server, timeout: Int): Long {
         if (s.protocol == "hysteria2") return Server.DELAY_UNTESTED
