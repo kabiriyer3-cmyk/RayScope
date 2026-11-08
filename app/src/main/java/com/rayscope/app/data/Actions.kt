@@ -24,6 +24,9 @@ object Actions {
     val testing = MutableStateFlow(false)
     val progress = MutableStateFlow(0 to 0)
 
+    /** Exit checks start a core each: a few at a time is plenty on a phone. */
+    private val exitSem = Semaphore(4)
+
     suspend fun importText(raw: String) {
         var text = raw.trim().removePrefix("\uFEFF").trim()
         if (text.isEmpty()) {
@@ -134,8 +137,9 @@ object Actions {
             Repo.save()
             val ids = targets.map { it.id }.toSet()
             val ok = Repo.servers.value.count { it.id in ids && it.isWorking }
-            AppLog.add("Проверка завершена: рабочих $ok из ${targets.size}")
-            if (!silent) toast("Рабочих: $ok из ${targets.size}")
+            val fake = Repo.servers.value.count { it.id in ids && it.isWorking && it.isFake() }
+            AppLog.add("Проверка завершена: рабочих $ok из ${targets.size}, не та страна: $fake")
+            if (!silent) toast("Рабочих: $ok из ${targets.size}" + if (fake > 0) " · страна не та, что в названии: $fake" else "")
         } finally {
             testing.value = false
         }
@@ -148,7 +152,8 @@ object Actions {
         else -> "реальная задержка + TCP"
     }
 
-    suspend fun testOne(id: String, save: Boolean = false) {
+    /** [core]: check through the core whatever the settings say (the server page wants the honest result and the exit). */
+    suspend fun testOne(id: String, save: Boolean = false, core: Boolean = false) {
         val s = Repo.server(id) ?: return
         val st = Repo.settings
         val mode = st.pingMode
@@ -160,6 +165,7 @@ object Actions {
         }
         // 0 a request through the core, 1 TCP handshake (Hysteria2 has no TCP port: it goes through the core), 2 ICMP
         val kind = when {
+            core -> 0
             mode == 3 -> 2
             mode == 2 && !udp -> 1
             else -> 0
@@ -172,6 +178,8 @@ object Actions {
             1 -> if (tcp >= 0) tcp to "" else -1L to "TCP: порт не отвечает"
             else -> Tester.realDelay(s)
         }
+        // through the core it also finds out where the server really lets you out
+        val exit = if (kind == 0 && d >= 0) exitSem.withPermit { Tester.exit(s) } else null
         Repo.update(id) {
             it.copy(
                 delay = d,
@@ -181,6 +189,9 @@ object Actions {
                 lastError = err,
                 successCount = it.successCount + (if (d >= 0) 1 else 0),
                 failCount = it.failCount + (if (d < 0) 1 else 0),
+                exitIp = exit?.ip ?: it.exitIp,
+                exitCc = exit?.cc ?: it.exitCc,
+                exitAt = if (exit != null) System.currentTimeMillis() else it.exitAt,
             )
         }
         if (save) Repo.save()

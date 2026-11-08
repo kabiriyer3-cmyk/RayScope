@@ -1,5 +1,6 @@
 package com.rayscope.app.model
 
+import com.rayscope.sub.ExitIp
 import org.json.JSONObject
 import java.util.UUID
 
@@ -41,6 +42,11 @@ data class Server(
     val favorite: Boolean = false,
     val successCount: Int = 0,
     val failCount: Int = 0,
+    /** address the traffic really leaves from, found by a check through the core; empty until then */
+    val exitIp: String = "",
+    /** country of [exitIp], ISO code */
+    val exitCc: String = "",
+    val exitAt: Long = 0,
 ) {
     val isWorking: Boolean get() = delay >= 0
     val isDead: Boolean get() = delay == DELAY_FAILED
@@ -63,6 +69,18 @@ data class Server(
         }
         return ""
     }
+
+    /** Country of the flag in the name, empty without one. */
+    fun claimedCountry(): String = ExitIp.codeOf(flagEmoji())
+
+    /** Country the traffic really leaves from once a check found it, the one from the name until then. */
+    fun realCountry(): String = exitCc.ifEmpty { claimedCountry() }
+
+    /** The name promises one country and the exit address is in another. */
+    fun isFake(): Boolean = ExitIp.mismatch(claimedCountry(), exitCc)
+
+    /** Flag of the real exit once it is known, the one from the name until then. */
+    fun realFlag(): String = ExitIp.flagOf(exitCc).ifEmpty { flagEmoji() }
 
     fun cleanName(): String {
         val f = flagEmoji()
@@ -132,6 +150,9 @@ data class Server(
         o.put("favorite", favorite)
         o.put("successCount", successCount)
         o.put("failCount", failCount)
+        o.put("exitIp", exitIp)
+        o.put("exitCc", exitCc)
+        o.put("exitAt", exitAt)
         return o
     }
 
@@ -175,6 +196,9 @@ data class Server(
             favorite = o.optBoolean("favorite", false),
             successCount = o.optInt("successCount", 0),
             failCount = o.optInt("failCount", 0),
+            exitIp = o.optString("exitIp"),
+            exitCc = o.optString("exitCc"),
+            exitAt = o.optLong("exitAt", 0L),
         )
     }
 }

@@ -110,7 +110,7 @@ object Repo {
             l.map {
                 it.copy(
                     delay = Server.DELAY_UNTESTED, pingKind = 0, tcpPing = Server.DELAY_UNTESTED, lastError = "",
-                    successCount = 0, failCount = 0,
+                    successCount = 0, failCount = 0, exitIp = "", exitCc = "", exitAt = 0,
                 )
             }
         }
@@ -147,6 +147,9 @@ object Repo {
                     favorite = o.favorite,
                     successCount = o.successCount,
                     failCount = o.failCount,
+                    exitIp = o.exitIp,
+                    exitCc = o.exitCc,
+                    exitAt = o.exitAt,
                 )
             }
             val firstIdx = list.indexOfFirst { it.subId == subId }
