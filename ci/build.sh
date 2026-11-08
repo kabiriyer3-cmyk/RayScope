@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RayScope CI build: Java, Android SDK, Gradle, Xray core, signing, APK, Windows build.
+# RayScope CI build: Java, Android SDK, Gradle, Xray core, signing, APK, Windows and Linux builds.
 # Does not depend on setup-android / setup-gradle actions.
 set -euo pipefail
 
@@ -167,3 +167,6 @@ ls -la dist
 
 # ---------------------------------------------------------------- windows
 bash ci/desktop.sh "$GRADLE"
+
+# ---------------------------------------------------------------- linux
+bash ci/linux.sh
