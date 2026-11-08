@@ -6,10 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -83,9 +81,8 @@ fun CheckScreen() {
     LaunchedEffect(Unit) {
         if (IpCheck.state.value.checkedAt == 0L) Actions.go { IpCheck.run() }
     }
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(start = PAGE_PAD, end = PAGE_PAD, top = PAGE_TOP, bottom = TAB_SPACE),
+    ScrollColumn(
+        PaddingValues(start = PAGE_PAD, end = PAGE_PAD, top = PAGE_TOP, bottom = TAB_SPACE),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Header("Проверка", "Виден ли настоящий IP") {
@@ -359,7 +356,7 @@ fun SettingsScreen(onOpenLog: () -> Unit) {
         dirty = true
     }
 
-    Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
+    ScrollBox(contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier.fillMaxWidth().padding(start = PAGE_PAD, end = PAGE_PAD, top = PAGE_TOP, bottom = TAB_SPACE),
             verticalArrangement = Arrangement.spacedBy(18.dp)
@@ -689,18 +686,17 @@ fun LogScreen(onBack: () -> Unit) {
             })
             IconBtn(Ico.Trash, "Очистить", { Log.lines.value = emptyList() }, tint = Bad)
         }
-        LazyColumn(
-            Modifier.fillMaxWidth().weight(1f).card(p, 16.dp),
-            state = list,
-            contentPadding = PaddingValues(12.dp)
-        ) {
-            items(lines) { l ->
-                val err = l.contains("rror") || l.contains("Ошибка") || l.contains("failed")
-                Text(
-                    l, color = if (err) Bad else p.text, fontSize = 11.5.sp, fontFamily = FontFamily.Monospace,
-                    lineHeight = 17.sp, modifier = Modifier.padding(vertical = 1.dp)
-                )
+        Box(Modifier.fillMaxWidth().weight(1f).card(p, 16.dp)) {
+            LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(12.dp)) {
+                items(lines) { l ->
+                    val err = l.contains("rror") || l.contains("Ошибка") || l.contains("failed")
+                    Text(
+                        l, color = if (err) Bad else p.text, fontSize = 11.5.sp, fontFamily = FontFamily.Monospace,
+                        lineHeight = 17.sp, modifier = Modifier.padding(vertical = 1.dp)
+                    )
+                }
             }
+            CardScrollbar(list)
         }
     }
 }

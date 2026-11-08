@@ -9,9 +9,7 @@ import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -71,10 +69,7 @@ fun HomeScreen(onGoServers: () -> Unit, onGoCheck: () -> Unit) {
     val updating by Actions.updating.collectAsState()
     val sel = remember(servers, selId) { Store.selected() }
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(start = PAGE_PAD, end = PAGE_PAD, top = PAGE_TOP, bottom = TAB_SPACE)
-    ) {
+    ScrollColumn(PaddingValues(start = PAGE_PAD, end = PAGE_PAD, top = PAGE_TOP, bottom = TAB_SPACE)) {
         ServerCard(st, sel, servers, onGoServers)
         Spacer(Modifier.height(GAP))
         StatGrid(st)
