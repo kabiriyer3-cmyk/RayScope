@@ -36,6 +36,10 @@ import com.rayscope.app.net.IpCheckModel
 import com.rayscope.app.net.Tester
 import com.rayscope.app.util.Fmt
 import com.rayscope.app.util.toast
+import com.rayscope.fluid.ConnectTile
+import com.rayscope.fluid.LogoMark
+import com.rayscope.fluid.NotchFrame
+import com.rayscope.fluid.NotchSpec
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -104,21 +108,7 @@ fun DashboardScreen(onToggle: () -> Unit, onGoServers: () -> Unit, onGoIp: () ->
     Page(title = "RayScope", scrolled = scrolled) {
         Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
             Spacer(Modifier.height(pageTop()))
-            Row(
-                Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                RayMark(Modifier.size(20.dp))
-                Spacer(Modifier.width(10.dp))
-                Text("RayScope", color = c.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp)
-                Spacer(Modifier.weight(1f))
-                Text(
-                    if (servers.isEmpty()) "нет серверов" else "$working из ${servers.size} работают",
-                    color = c.hint, fontSize = 13.sp, style = TNum
-                )
-            }
-
-            ConnectionCard(vpn, server, now, onToggle, onGoServers, Modifier.appear(0))
+            NotchBlock(vpn, server, now, working, servers.size, onToggle, onGoServers, Modifier.appear(0))
 
             if (connected) {
                 LiveGroup(vpn, Modifier.appear(1))
@@ -197,7 +187,98 @@ fun DashboardScreen(onToggle: () -> Unit, onGoServers: () -> Unit, onGoIp: () ->
     }
 }
 
-/** Status, server and the one button that matters. */
+private val NOTCH = NotchSpec(tile = 104.dp, gap = 8.dp, tileRadius = 26.dp, radius = 26.dp, cusp = 13.dp)
+
+/**
+ * Same layout as the Windows window: the connect tile in the corner, the panel wrapping around it, light in the
+ * gap while the tunnel is up. State on the right of the tile, the server under it.
+ */
+@Composable
+private fun NotchBlock(
+    vpn: VpnStatus,
+    server: Server?,
+    now: Long,
+    working: Int,
+    total: Int,
+    onToggle: () -> Unit,
+    onGoServers: () -> Unit,
+    modifier: Modifier,
+) {
+    val c = ray
+    val connected = vpn.state == ConnState.CONNECTED
+    val busy = vpn.state == ConnState.CONNECTING || vpn.state == ConnState.STOPPING
+    NotchFrame(
+        spec = NOTCH,
+        panel = c.surface,
+        edge = c.stroke,
+        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        ray = if (connected) 2 else if (vpn.state == ConnState.CONNECTING) 1 else 0,
+        rayColor = c.accent,
+        motion = look.motion,
+        tile = {
+            ConnectTile(
+                on = connected,
+                busy = busy,
+                onClick = onToggle,
+                idleFill = if (c.dark) Color(0xFF25262B) else Color(0xFFE3E3E6),
+                idleInk = c.hint,
+                onFill = c.accent,
+                onInk = c.onAccent,
+                label = when (vpn.state) {
+                    ConnState.CONNECTED -> "ВКЛ"
+                    ConnState.STOPPED -> "ВЫКЛ"
+                    else -> "• • •"
+                },
+                modifier = Modifier.fillMaxSize(),
+                radius = NOTCH.tileRadius,
+                enabled = vpn.state != ConnState.STOPPING && server != null,
+                motion = look.motion,
+            )
+        },
+        shoulder = {
+            Column(Modifier.fillMaxSize().padding(start = 14.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    LogoMark(Modifier.size(14.dp), c.text)
+                    Spacer(Modifier.width(7.dp))
+                    Text("RayScope", color = c.text.copy(alpha = 0.86f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Text(if (total == 0) "нет серверов" else "$working/$total", color = c.hint, fontSize = 12.sp, style = TNum)
+                }
+                Spacer(Modifier.weight(1f))
+                Text(
+                    when (vpn.state) {
+                        ConnState.CONNECTED -> "Защищено"
+                        ConnState.CONNECTING -> "Подключение…"
+                        ConnState.STOPPING -> "Отключение…"
+                        ConnState.STOPPED -> "Не защищено"
+                    },
+                    color = c.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp, maxLines = 1
+                )
+                Text(
+                    when {
+                        connected -> Fmt.duration(now - vpn.since)
+                        server == null -> "Добавьте сервер"
+                        else -> "Нажмите на плитку"
+                    },
+                    color = c.hint, fontSize = 12.5.sp, maxLines = 1, style = TNum
+                )
+            }
+        },
+        body = {
+            Column(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, bottom = 10.dp)) {
+                if (vpn.error.isNotEmpty()) {
+                    Row(Modifier.padding(start = 4.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(RayIcons.Alert, contentDescription = null, tint = Bad, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(vpn.error, color = Bad, fontSize = 13.sp, lineHeight = 17.sp)
+                    }
+                }
+                ServerRow(server, onGoServers)
+            }
+        }
+    )
+}
+
+/** Status, server and the one button that matters (kept for reference, the dashboard uses NotchBlock). */
 @Composable
 private fun ConnectionCard(
     vpn: VpnStatus,

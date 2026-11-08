@@ -13,7 +13,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -21,9 +23,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -40,20 +41,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.scale
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.PathBuilder
-import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.TextStyle
@@ -63,25 +63,34 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import com.rayscope.fluid.Fluid
+import com.rayscope.fluid.FluidSlider
+import com.rayscope.fluid.Glyphs
+import com.rayscope.fluid.GooeyToggle
+import com.rayscope.fluid.LogoMark
+import com.rayscope.fluid.MinusGlyph
+import com.rayscope.fluid.RayLogo
+import com.rayscope.fluid.fluidSpan
 import kotlin.math.roundToInt
 
-// ------------------------------------------------------------------ palette: neutral greys, one accent (same as Android)
+// ------------------------------------------------------------------ palette: graphite, one flat accent (same as Android)
 
-val Good = Color(0xFF4CB782)
-val Mid = Color(0xFFE2A93B)
-val Bad = Color(0xFFEB5757)
-val Idle = Color(0xFF6E7380)
-val Orange = Color(0xFFEF8A47)
-val Blue = Color(0xFF4E8EF7)
-val Purple = Color(0xFF9C88F0)
-val Indigo = Color(0xFF7C84FF)
-val Teal = Color(0xFF3FB8A9)
-val Pink = Color(0xFFE8688F)
-val Gray = Color(0xFF8B8D98)
-val Yellow = Color(0xFFE8C547)
-val Cyan = Color(0xFF4FB7E0)
-val InkOn = Color(0xFF0D0E10)
+val Good = Color(0xFF3DDC97)
+val Mid = Color(0xFFF5B83D)
+val Bad = Color(0xFFF26D6D)
+val Idle = Color(0xFF6B7385)
+val Orange = Color(0xFFF59E5B)
+val Blue = Color(0xFF3D8BFF)
+val Purple = Color(0xFFA78BFA)
+val Indigo = Color(0xFF7C8CFF)
+val Teal = Color(0xFF2DD4BF)
+val Pink = Color(0xFFF472B6)
+val Gray = Color(0xFF8C94A8)
+val Yellow = Color(0xFFFBBF24)
+val Cyan = Color(0xFF4FD6FF)
+val InkOn = Color(0xFF0F1115)
 
 val TNum = TextStyle(fontFeatureSettings = "tnum")
 
@@ -100,39 +109,47 @@ data class Pal(
     val onAccent: Color,
     /** row highlight under the mouse */
     val hover: Color,
-)
+    /** same as accent: kept so older call sites compile */
+    val accent2: Color = accent,
+    /** connect tile while disconnected */
+    val tileIdle: Color = raised,
+) {
+    /** Primary fill. Flat on purpose: no gradients anywhere. */
+    val accentBrush: Brush get() = SolidColor(accent)
+}
 
-val ACCENT_NAMES = listOf("Индиго", "Синий", "Графит", "Зелёный", "Янтарь", "Красный", "Фиалка", "Бирюза")
-private val ACCENTS_DARK = listOf(
-    Color(0xFF7C84FF), Color(0xFF4E8EF7), Color(0xFFE6E6E9), Color(0xFF4CB782),
-    Color(0xFFE2A93B), Color(0xFFEB5757), Color(0xFFA48CF2), Color(0xFF3FB8A9)
-)
-private val ACCENTS_LIGHT = listOf(
-    Color(0xFF5864D8), Color(0xFF2F6FE0), Color(0xFF1A1B1F), Color(0xFF1F8A5B),
-    Color(0xFFB07A10), Color(0xFFD13B3B), Color(0xFF7457D6), Color(0xFF168A7E)
-)
+val ACCENT_NAMES = listOf("Графит", "Индиго", "Синий", "Зелёный", "Янтарь", "Красный", "Фиалка", "Бирюза")
+private val ACCENTS_DARK = listOf(0xFFE9EAED, 0xFF7C8CFF, 0xFF3D8BFF, 0xFF34D399, 0xFFFBBF24, 0xFFF87171, 0xFFA78BFA, 0xFF2DD4BF).map { Color(it) }
+private val ACCENTS_LIGHT = listOf(0xFF15171C, 0xFF4F5BD5, 0xFF1F6FEB, 0xFF059669, 0xFFB45309, 0xFFDC2626, 0xFF7C3AED, 0xFF0D9488).map { Color(it) }
 
 fun accentColor(i: Int, dark: Boolean): Color {
     val l = if (dark) ACCENTS_DARK else ACCENTS_LIGHT
     return l.getOrElse(i) { l[0] }
 }
 
+/** Kept for callers of the old two-hue accent: there are no gradients any more, so it is the accent itself. */
+fun accentColor2(i: Int, dark: Boolean): Color = accentColor(i, dark)
+
+/**
+ * Graphite surfaces. side: the window panel; surface: cards on it; raised: controls on cards.
+ * tileIdle: the connect tile while the tunnel is down.
+ */
 fun palette(dark: Boolean, accentIndex: Int): Pal {
     val a = accentColor(accentIndex, dark)
-    val on = if (a.luminance() > 0.45f) InkOn else Color.White
+    val on = if (a.luminance() > 0.5f) InkOn else Color.White
     return if (dark) {
         Pal(
-            dark = true, bg = Color(0xFF0D0E10), side = Color(0xFF111215), surface = Color(0xFF141518),
-            raised = Color(0xFF1C1D21), stroke = Color.White.copy(alpha = 0.075f), text = Color(0xFFEDEEF0),
-            hint = Color(0xFF8B8D98), faint = Color.White.copy(alpha = 0.08f), accent = a, onAccent = on,
-            hover = Color.White.copy(alpha = 0.045f)
+            dark = true, bg = Color(0xFF0A0B0D), side = Color(0xFF111216), surface = Color(0xFF191B20),
+            raised = Color(0xFF23252B), stroke = Color.White.copy(alpha = 0.07f), text = Color(0xFFF2F3F5),
+            hint = Color(0xFF8B909A), faint = Color.White.copy(alpha = 0.08f), accent = a, onAccent = on,
+            hover = Color.White.copy(alpha = 0.05f), accent2 = a, tileIdle = Color(0xFF25272D)
         )
     } else {
         Pal(
-            dark = false, bg = Color(0xFFF7F7F8), side = Color(0xFFF1F1F3), surface = Color.White,
-            raised = Color(0xFFF0F0F2), stroke = Color.Black.copy(alpha = 0.08f), text = Color(0xFF16171A),
-            hint = Color(0xFF6B6F7A), faint = Color.Black.copy(alpha = 0.07f), accent = a, onAccent = on,
-            hover = Color.Black.copy(alpha = 0.04f)
+            dark = false, bg = Color(0xFFF1F1EF), side = Color(0xFFE9E9E6), surface = Color.White,
+            raised = Color(0xFFF1F1EF), stroke = Color.Black.copy(alpha = 0.08f), text = Color(0xFF111215),
+            hint = Color(0xFF5F646D), faint = Color.Black.copy(alpha = 0.07f), accent = a, onAccent = on,
+            hover = Color.Black.copy(alpha = 0.045f), accent2 = a, tileIdle = Color(0xFFD9D9D5)
         )
     }
 }
@@ -152,278 +169,131 @@ fun RayTheme(theme: Int, accent: Int, content: @Composable () -> Unit) {
     val p = palette(dark, accent)
     val scheme = if (dark) {
         darkColorScheme(
-            primary = p.accent, onPrimary = p.onAccent, secondary = p.accent,
+            primary = p.accent, onPrimary = p.onAccent, secondary = p.accent2,
             background = p.bg, onBackground = p.text, surface = p.surface, onSurface = p.text,
             surfaceVariant = p.raised, onSurfaceVariant = p.hint,
-            surfaceContainer = p.surface, surfaceContainerHigh = p.raised, outline = Color(0xFF2C2D33)
+            surfaceContainer = p.surface, surfaceContainerHigh = p.raised, outline = Color(0xFF2A3040)
         )
     } else {
         lightColorScheme(
-            primary = p.accent, onPrimary = p.onAccent, secondary = p.accent,
+            primary = p.accent, onPrimary = p.onAccent, secondary = p.accent2,
             background = p.bg, onBackground = p.text, surface = p.surface, onSurface = p.text,
             surfaceVariant = p.raised, onSurfaceVariant = p.hint,
-            surfaceContainer = Color.White, surfaceContainerHigh = Color.White, outline = Color(0xFFDADBE0)
+            surfaceContainer = Color.White, surfaceContainerHigh = Color.White, outline = Color(0xFFD5D9E2)
         )
     }
     MaterialTheme(colorScheme = scheme) {
-        CompositionLocalProvider(LocalPal provides p, LocalContentColor provides p.text) {
+        // M3 body text carries 0.5 sp tracking and a fixed 24 sp line: both made rows look loose and uneven
+        val text = LocalTextStyle.current.merge(TextStyle(letterSpacing = 0.sp, lineHeight = 1.4.em))
+        CompositionLocalProvider(LocalPal provides p, LocalContentColor provides p.text, LocalTextStyle provides text) {
             content()
         }
     }
 }
 
-// ------------------------------------------------------------------ the R mark
+// ------------------------------------------------------------------ the lettermark
 
-/*
- * Geometric R from three planes in a 77 x 100 box; the leg is the "ray" in the accent colour.
- * Same geometry as the Android icon and desktop/launcher/make_icon.py.
- */
-private fun PathBuilder.markBowl(x: Float, y: Float, k: Float) {
-    moveTo(x, y)
-    lineTo(x + 44f * k, y)
-    arcTo(25f * k, 25f * k, 0f, false, true, x + 44f * k, y + 50f * k)
-    lineTo(x, y + 50f * k)
-    close()
-}
-
-private fun PathBuilder.markStem(x: Float, y: Float, k: Float) {
-    moveTo(x, y + 56f * k)
-    lineTo(x + 25f * k, y + 56f * k)
-    lineTo(x + 25f * k, y + 100f * k)
-    lineTo(x, y + 100f * k)
-    close()
-}
-
-private fun PathBuilder.markLeg(x: Float, y: Float, k: Float) {
-    moveTo(x + 31f * k, y + 56f * k)
-    lineTo(x + 58f * k, y + 56f * k)
-    lineTo(x + 77f * k, y + 100f * k)
-    lineTo(x + 50f * k, y + 100f * k)
-    close()
-}
-
+/** The R lettermark, one continuous line in one colour. */
 @Composable
-fun RayMark(modifier: Modifier = Modifier, ink: Color = pal.text, ray: Color = pal.accent) {
-    Canvas(modifier) {
-        val k = minOf(size.width / 77f, size.height / 100f)
-        translate((size.width - 77f * k) / 2f, (size.height - 100f * k) / 2f) {
-            scale(k, k, pivot = Offset.Zero) {
-                drawPath(Path().apply {
-                    moveTo(0f, 0f); lineTo(44f, 0f)
-                    arcTo(androidx.compose.ui.geometry.Rect(19f, 0f, 69f, 50f), -90f, 180f, false)
-                    lineTo(0f, 50f); close()
-                }, ink)
-                drawPath(Path().apply { moveTo(0f, 56f); lineTo(25f, 56f); lineTo(25f, 100f); lineTo(0f, 100f); close() }, ink)
-                drawPath(Path().apply { moveTo(31f, 56f); lineTo(58f, 56f); lineTo(77f, 100f); lineTo(50f, 100f); close() }, ray)
-            }
-        }
-    }
+fun RayMark(modifier: Modifier = Modifier, ink: Color = pal.text) {
+    LogoMark(modifier, ink)
 }
 
-// ------------------------------------------------------------------ icons (Lucide-like, drawn in code)
-
-private val INK = SolidColor(Color.Black)
-
-private fun icon(name: String, block: ImageVector.Builder.() -> Unit): ImageVector =
-    ImageVector.Builder(name = name, defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
-        .apply(block).build()
-
-private fun ImageVector.Builder.line(width: Float = 1.7f, block: PathBuilder.() -> Unit) {
-    path(fill = null, stroke = INK, strokeLineWidth = width, strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round, pathBuilder = block)
-}
-
-private fun ImageVector.Builder.solid(block: PathBuilder.() -> Unit) {
-    path(fill = INK, pathBuilder = block)
-}
-
-private fun PathBuilder.circle(cx: Float, cy: Float, r: Float) {
-    moveTo(cx - r, cy)
-    arcTo(r, r, 0f, false, true, cx + r, cy)
-    arcTo(r, r, 0f, false, true, cx - r, cy)
-    close()
-}
-
-private fun PathBuilder.rect(x: Float, y: Float, w: Float, h: Float) {
-    moveTo(x, y)
-    lineTo(x + w, y)
-    lineTo(x + w, y + h)
-    lineTo(x, y + h)
-    close()
-}
-
-private fun PathBuilder.roundRect(x: Float, y: Float, w: Float, h: Float, r: Float) {
-    moveTo(x + r, y)
-    lineTo(x + w - r, y)
-    arcTo(r, r, 0f, false, true, x + w, y + r)
-    lineTo(x + w, y + h - r)
-    arcTo(r, r, 0f, false, true, x + w - r, y + h)
-    lineTo(x + r, y + h)
-    arcTo(r, r, 0f, false, true, x, y + h - r)
-    lineTo(x, y + r)
-    arcTo(r, r, 0f, false, true, x + r, y)
-    close()
-}
-
-/** Window and tray icon: graphite tile with the R mark. */
+/** Window, taskbar and tray icon: graphite tile with the white lettermark (small optical cut), same as RayScope.exe. */
 private fun appIcon(): ImageVector {
-    val b = ImageVector.Builder(name = "app", defaultWidth = 32.dp, defaultHeight = 32.dp, viewportWidth = 32f, viewportHeight = 32f)
-    b.path(fill = SolidColor(Color(0xFF111215))) { roundRect(1f, 1f, 30f, 30f, 7f) }
-    val k = 0.19f
-    val x = (32f - 77f * k) / 2f
-    val y = (32f - 100f * k) / 2f
-    b.path(fill = SolidColor(Color(0xFFF4F4F5))) { markBowl(x, y, k) }
-    b.path(fill = SolidColor(Color(0xFFF4F4F5))) { markStem(x, y, k) }
-    b.path(fill = SolidColor(Color(0xFF7C84FF))) { markLeg(x, y, k) }
+    val b = ImageVector.Builder(name = "app", defaultWidth = 32.dp, defaultHeight = 32.dp, viewportWidth = 100f, viewportHeight = 100f)
+    b.addPath(
+        PathParser().parsePathString("M25 3H75A22 22 0 0 1 97 25V75A22 22 0 0 1 75 97H25A22 22 0 0 1 3 75V25A22 22 0 0 1 25 3Z").toNodes(),
+        fill = SolidColor(RayLogo.TILE)
+    )
+    b.addGroup(name = "mark", pivotX = 50f, pivotY = 50f, scaleX = 0.7f, scaleY = 0.7f)
+    b.addPath(PathParser().parsePathString(RayLogo.PATH_SMALL).toNodes(), fill = SolidColor(RayLogo.INK))
+    b.clearGroup()
     return b.build()
 }
 
+// ------------------------------------------------------------------ icons: RayScope glyphs (shared/src/.../Glyphs.kt)
+
 object Ico {
-    /** Same artwork as RayScope.exe: graphite tile, R mark with the accent leg. */
     val App: ImageVector = appIcon()
 
-    val Power = icon("power") {
-        line { moveTo(12f, 2.5f); lineTo(12f, 11.5f) }
-        line { moveTo(18.36f, 6.64f); arcTo(9f, 9f, 0f, true, true, 5.64f, 6.64f) }
-    }
-    val Shield = icon("shield") {
-        line {
-            moveTo(12f, 2.5f); lineTo(4.5f, 5.5f); lineTo(4.5f, 11f)
-            curveTo(4.5f, 16f, 7.7f, 19.9f, 12f, 21.5f)
-            curveTo(16.3f, 19.9f, 19.5f, 16f, 19.5f, 11f)
-            lineTo(19.5f, 5.5f); close()
-        }
-        line { moveTo(8.5f, 12f); lineTo(11f, 14.5f); lineTo(15.5f, 9.5f) }
-    }
-    val Bolt = icon("bolt") {
-        line { moveTo(13f, 2f); lineTo(4f, 14f); lineTo(12f, 14f); lineTo(11f, 22f); lineTo(20f, 10f); lineTo(12f, 10f); close() }
-    }
-    val Home = icon("home") {
-        line { moveTo(3f, 11f); lineTo(12f, 3.5f); lineTo(21f, 11f) }
-        line { moveTo(5.5f, 9.5f); lineTo(5.5f, 20f); lineTo(18.5f, 20f); lineTo(18.5f, 9.5f) }
-    }
-    val Servers = icon("servers") {
-        line { roundRect(3f, 4f, 18f, 7f, 1.5f) }
-        line { roundRect(3f, 13f, 18f, 7f, 1.5f) }
-        line(2.4f) { moveTo(7f, 7.5f); lineTo(7.01f, 7.5f) }
-        line(2.4f) { moveTo(7f, 16.5f); lineTo(7.01f, 16.5f) }
-    }
-    val Radar = icon("radar") {
-        line { circle(12f, 12f, 9f) }
-        line { circle(12f, 12f, 4.5f) }
-        line { moveTo(12f, 12f); lineTo(18.4f, 5.6f) }
-    }
-    val Sliders = icon("sliders") {
-        line { moveTo(4f, 7f); lineTo(20f, 7f) }
-        line { moveTo(4f, 17f); lineTo(20f, 17f) }
-        solid { circle(9f, 7f, 2.4f) }
-        solid { circle(15f, 17f, 2.4f) }
-    }
-    val Logs = icon("logs") {
-        line { roundRect(5f, 3f, 14f, 18f, 1.5f) }
-        line { moveTo(8.5f, 8f); lineTo(15.5f, 8f) }
-        line { moveTo(8.5f, 12f); lineTo(15.5f, 12f) }
-        line { moveTo(8.5f, 16f); lineTo(13f, 16f) }
-    }
-    val Refresh = icon("refresh") {
-        line { moveTo(20f, 12f); arcTo(8f, 8f, 0f, true, true, 17.66f, 6.34f) }
-        line { moveTo(20f, 4f); lineTo(20f, 9f); lineTo(15f, 9f) }
-    }
-    val Plus = icon("plus") {
-        line { moveTo(12f, 5f); lineTo(12f, 19f) }
-        line { moveTo(5f, 12f); lineTo(19f, 12f) }
-    }
-    val Close = icon("close") {
-        line { moveTo(6f, 6f); lineTo(18f, 18f) }
-        line { moveTo(18f, 6f); lineTo(6f, 18f) }
-    }
-    val Check = icon("check") {
-        line { moveTo(5f, 12.5f); lineTo(10f, 17.5f); lineTo(19f, 7f) }
-    }
-    val Chevron = icon("chevron") {
-        line { moveTo(9f, 6f); lineTo(15f, 12f); lineTo(9f, 18f) }
-    }
-    val Back = icon("back") {
-        line { moveTo(15f, 6f); lineTo(9f, 12f); lineTo(15f, 18f) }
-    }
-    val Search = icon("search") {
-        line { circle(11f, 11f, 7f) }
-        line { moveTo(16.5f, 16.5f); lineTo(21f, 21f) }
-    }
-    private fun PathBuilder.star() {
-        moveTo(12f, 2.5f); lineTo(14.9f, 8.6f); lineTo(21.5f, 9.3f); lineTo(16.5f, 13.8f); lineTo(17.9f, 20.4f)
-        lineTo(12f, 17f); lineTo(6.1f, 20.4f); lineTo(7.5f, 13.8f); lineTo(2.5f, 9.3f); lineTo(9.1f, 8.6f); close()
-    }
-    val Star = icon("star") { line { star() } }
-    val StarFilled = icon("starFilled") { solid { star() } }
-    val Trash = icon("trash") {
-        line { moveTo(4f, 7f); lineTo(20f, 7f) }
-        line { moveTo(9f, 7f); lineTo(9f, 4f); lineTo(15f, 4f); lineTo(15f, 7f) }
-        line { moveTo(6f, 7f); lineTo(7f, 20f); lineTo(17f, 20f); lineTo(18f, 7f) }
-    }
-    val Copy = icon("copy") {
-        line { roundRect(8f, 8f, 12f, 12f, 1.5f) }
-        line { moveTo(16f, 8f); lineTo(16f, 4f); lineTo(4f, 4f); lineTo(4f, 16f); lineTo(8f, 16f) }
-    }
-    val Globe = icon("globe") {
-        line { circle(12f, 12f, 9f) }
-        line { moveTo(3f, 12f); lineTo(21f, 12f) }
-        line { moveTo(12f, 3f); arcTo(4.5f, 9f, 0f, false, true, 12f, 21f); arcTo(4.5f, 9f, 0f, false, true, 12f, 3f) }
-    }
-    val Clipboard = icon("clipboard") {
-        line { roundRect(5f, 4.5f, 14f, 16.5f, 1.5f) }
-        line { roundRect(9f, 2.5f, 6f, 3.5f, 1f) }
-    }
-    val Download = icon("download") {
-        line { moveTo(12f, 4f); lineTo(12f, 15f) }
-        line { moveTo(7f, 10.5f); lineTo(12f, 15.5f); lineTo(17f, 10.5f) }
-        line { moveTo(5f, 20f); lineTo(19f, 20f) }
-    }
-    val Upload = icon("upload") {
-        line { moveTo(12f, 20f); lineTo(12f, 8.5f) }
-        line { moveTo(7f, 13f); lineTo(12f, 8f); lineTo(17f, 13f) }
-        line { moveTo(5f, 4f); lineTo(19f, 4f) }
-    }
-    val Alert = icon("alert") {
-        line { moveTo(12f, 3f); lineTo(22f, 20f); lineTo(2f, 20f); close() }
-        line { moveTo(12f, 9f); lineTo(12f, 13.5f) }
-        line(2.4f) { moveTo(12f, 17f); lineTo(12.01f, 17f) }
-    }
-    val More = icon("more") {
-        solid { circle(5f, 12f, 1.6f) }
-        solid { circle(12f, 12f, 1.6f) }
-        solid { circle(19f, 12f, 1.6f) }
-    }
-    val Sort = icon("sort") {
-        line { moveTo(4f, 7f); lineTo(20f, 7f) }
-        line { moveTo(7f, 12f); lineTo(17f, 12f) }
-        line { moveTo(10f, 17f); lineTo(14f, 17f) }
-    }
-    val Layers = icon("layers") {
-        line { moveTo(12f, 3f); lineTo(21f, 8f); lineTo(12f, 13f); lineTo(3f, 8f); close() }
-        line { moveTo(3f, 13f); lineTo(12f, 18f); lineTo(21f, 13f) }
-    }
-    val Activity = icon("activity") {
-        line { moveTo(3f, 12f); lineTo(7f, 12f); lineTo(10f, 4f); lineTo(14f, 20f); lineTo(17f, 12f); lineTo(21f, 12f) }
-    }
-    val Folder = icon("folder") {
-        line { moveTo(3f, 6f); lineTo(9f, 6f); lineTo(11f, 8f); lineTo(21f, 8f); lineTo(21f, 19f); lineTo(3f, 19f); close() }
-    }
-    val Link = icon("link") {
-        line { moveTo(10f, 14f); lineTo(14f, 10f) }
-        line { moveTo(8.5f, 11.5f); lineTo(6.5f, 13.5f); arcTo(3.5f, 3.5f, 0f, false, false, 11.5f, 18.5f); lineTo(13.5f, 16.5f) }
-        line { moveTo(15.5f, 12.5f); lineTo(17.5f, 10.5f); arcTo(3.5f, 3.5f, 0f, false, false, 12.5f, 5.5f); lineTo(10.5f, 7.5f) }
-    }
-    val Arrow = icon("arrow") {
-        line { moveTo(4f, 12f); lineTo(20f, 12f) }
-        line { moveTo(14f, 6f); lineTo(20f, 12f); lineTo(14f, 18f) }
-    }
+    val Home get() = Glyphs.Home
+    val Servers get() = Glyphs.Servers
+    val Globe get() = Glyphs.Globe
+    val Settings get() = Glyphs.Settings
+    val Sliders get() = Glyphs.Sliders
+    val Radar get() = Glyphs.Radar
+    val Search get() = Glyphs.Search
+    val Refresh get() = Glyphs.Refresh
+    val Repeat get() = Glyphs.Repeat
+    val Sort get() = Glyphs.Sort
+    val More get() = Glyphs.More
+    val Star get() = Glyphs.Star
+    val StarFilled get() = Glyphs.StarFilled
+    val Info get() = Glyphs.Info
+    val Back get() = Glyphs.Back
+    val Chevron get() = Glyphs.Chevron
+    val Plus get() = Glyphs.Plus
+    val Trash get() = Glyphs.Trash
+    val Close get() = Glyphs.Close
+    val Power get() = Glyphs.Power
+    val Play get() = Glyphs.Play
+    val Bolt get() = Glyphs.Bolt
+    val Copy get() = Glyphs.Copy
+    val Share get() = Glyphs.Share
+    val Shield get() = Glyphs.Shield
+    val ShieldCheck get() = Glyphs.ShieldCheck
+    val Gauge get() = Glyphs.Gauge
+    val Activity get() = Glyphs.Activity
+    val ArrowDown get() = Glyphs.ArrowDown
+    val ArrowUp get() = Glyphs.ArrowUp
+    val Clock get() = Glyphs.Clock
+    val Timer get() = Glyphs.Timer
+    val Link get() = Glyphs.Link
+    val Apps get() = Glyphs.Apps
+    val Logs get() = Glyphs.Logs
+    val Check get() = Glyphs.Check
+    val Clipboard get() = Glyphs.Clipboard
+    val Package get() = Glyphs.Package
+    val Pin get() = Glyphs.Pin
+    val Alert get() = Glyphs.Alert
+    val Lock get() = Glyphs.Lock
+    val Key get() = Glyphs.Key
+    val Wifi get() = Glyphs.Wifi
+    val Code get() = Glyphs.Code
+    val Sun get() = Glyphs.Sun
+    val Moon get() = Glyphs.Moon
+    val Signal get() = Glyphs.Signal
+    val Eye get() = Glyphs.Eye
+    val Plug get() = Glyphs.Plug
+    val Route get() = Glyphs.Route
+    val Fork get() = Glyphs.Fork
+    val Layers get() = Glyphs.Layers
+    val Scissors get() = Glyphs.Scissors
+    val Hash get() = Glyphs.Hash
+    val Network get() = Glyphs.Network
+    val Ban get() = Glyphs.Ban
+    val Filter get() = Glyphs.Filter
+    val Download get() = Glyphs.Download
+    val Upload get() = Glyphs.Upload
+    val Vibrate get() = Glyphs.Vibrate
+    val User get() = Glyphs.User
+    val Target get() = Glyphs.Target
+    val Folder get() = Glyphs.Folder
+    val Arrow get() = Glyphs.Arrow
+    val Minus get() = MinusGlyph
 }
 
 // ------------------------------------------------------------------ helpers
 
-/** Screens ask for radii from the old 12-20 dp scale; they are halved so cards sit at 6-10 dp. */
-fun soft(radius: Dp): RoundedCornerShape = RoundedCornerShape((radius * 0.5f).coerceIn(3.dp, 10.dp))
+/** Side and top padding of every page inside the panel. */
+val PAGE_PAD = 14.dp
+val PAGE_TOP = 6.dp
 
+/** Screens ask for radii on the 12-20 dp scale; the fluid look keeps them generous. */
+fun soft(radius: Dp): RoundedCornerShape = RoundedCornerShape((radius * 0.8f).coerceIn(8.dp, 18.dp))
+
+/** Surface card with a flat hairline. */
 fun Modifier.card(p: Pal, radius: Dp = 18.dp, stroke: Color = p.stroke, width: Dp = 1.dp): Modifier {
     val s = soft(radius)
     return this.clip(s).background(p.surface).border(width, stroke, s)
@@ -431,17 +301,32 @@ fun Modifier.card(p: Pal, radius: Dp = 18.dp, stroke: Color = p.stroke, width: D
 
 fun Modifier.hand(): Modifier = this.pointerHoverIcon(PointerIcon.Hand)
 
-/** Clickable with a hover tint instead of a ripple. */
+/** Clickable with a fading hover tint instead of a ripple. */
 @Composable
-fun Modifier.press(enabled: Boolean = true, onClick: () -> Unit): Modifier {
-    val src = remember { MutableInteractionSource() }
+fun Modifier.press(enabled: Boolean = true, onClick: () -> Unit): Modifier =
+    pressWith(remember { MutableInteractionSource() }, enabled, onClick)
+
+@Composable
+fun Modifier.pressWith(src: MutableInteractionSource, enabled: Boolean = true, onClick: () -> Unit): Modifier {
     val hovered by src.collectIsHoveredAsState()
     val p = pal
+    val bg by animateColorAsState(if (hovered && enabled) p.hover else p.hover.copy(alpha = 0f), tween(140), label = "hover")
     return this
-        .background(if (hovered && enabled) p.hover else Color.Transparent)
+        .background(bg)
         .hoverable(src, enabled)
         .clickable(interactionSource = src, indication = null, enabled = enabled, onClick = onClick)
         .hand()
+}
+
+/** Jelly squash while pressed. */
+@Composable
+fun Modifier.squish(src: MutableInteractionSource, enabled: Boolean = true, depth: Float = 0.96f): Modifier {
+    val pressed by src.collectIsPressedAsState()
+    val k by animateFloatAsState(if (pressed && enabled) depth else 1f, Fluid.jelly(), label = "squish")
+    return this.graphicsLayer {
+        scaleX = k
+        scaleY = k
+    }
 }
 
 @Composable
@@ -491,32 +376,35 @@ fun Caps(text: String, modifier: Modifier = Modifier, color: Color = Color.Unspe
     )
 }
 
+/** Small tinted pill: protocol, transport, security. */
 @Composable
 fun Tag(text: String, color: Color = Color.Unspecified) {
     val p = pal
     val col = if (color == Color.Unspecified) p.hint else color
-    val shape = RoundedCornerShape(4.dp)
-    Text(
-        text, color = col, fontSize = 10.5.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace,
-        maxLines = 1,
-        modifier = Modifier.clip(shape).border(1.dp, p.stroke, shape).padding(horizontal = 6.dp, vertical = 2.dp)
-    )
+    val shape = RoundedCornerShape(50)
+    Box(
+        Modifier.height(20.dp).clip(shape).background(if (color == Color.Unspecified) p.faint else col.copy(alpha = 0.13f))
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text, color = col, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1, style = TNum)
+    }
 }
 
 @Composable
 fun DevTag() {
-    Tag("dev")
+    Tag("dev", Purple)
 }
 
 @Composable
 fun Header(title: String, subtitle: String? = null, trailing: @Composable RowScope.() -> Unit = {}) {
     val p = pal
-    Row(Modifier.fillMaxWidth().padding(bottom = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(title, color = p.text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.3).sp, maxLines = 1)
+            Text(title, color = p.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.4).sp, maxLines = 1)
             if (subtitle != null) {
-                Spacer(Modifier.height(2.dp))
-                Text(subtitle, color = p.hint, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(1.dp))
+                Text(subtitle, color = p.hint, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         trailing()
@@ -534,14 +422,14 @@ fun Section(
     val p = pal
     Column(modifier.fillMaxWidth()) {
         if (title != null) {
-            Row(Modifier.fillMaxWidth().padding(start = 2.dp, end = 2.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                 Caps(title, Modifier.weight(1f))
                 if (trailing != null) trailing()
             }
         }
-        Column(Modifier.fillMaxWidth().card(p, 16.dp), content = content)
+        Column(Modifier.fillMaxWidth().card(p, 18.dp), content = content)
         if (footer != null) {
-            Text(footer, color = p.hint, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.padding(start = 2.dp, end = 2.dp, top = 7.dp))
+            Text(footer, color = p.hint, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))
         }
     }
 }
@@ -554,7 +442,7 @@ fun Line() {
 @Composable
 fun KV(k: String, v: String, valueColor: Color = Color.Unspecified, mono: Boolean = false) {
     val p = pal
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(k, color = p.hint, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(0.42f))
         Text(
             v.ifEmpty { "—" },
@@ -575,15 +463,47 @@ fun KVIf(k: String, v: String, mono: Boolean = false) {
 @Composable
 fun IconTile(icon: ImageVector, tint: Color, size: Dp = 34.dp, iconSize: Dp = 18.dp, iconModifier: Modifier = Modifier) {
     val p = pal
-    val shape = soft(size * 0.45f)
-    Box(Modifier.size(size).clip(shape).background(p.raised).border(1.dp, p.stroke, shape), contentAlignment = Alignment.Center) {
-        Icon(icon, contentDescription = null, tint = rowTint(tint), modifier = iconModifier.size(iconSize))
+    val shape = RoundedCornerShape(size * 0.3f)
+    val col = rowTint(tint)
+    Box(
+        Modifier.size(size).clip(shape).background(if (col == p.hint) p.raised else col.copy(alpha = 0.13f)).border(1.dp, p.stroke, shape),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = null, tint = col, modifier = iconModifier.size(iconSize))
+    }
+}
+
+/** Tinted square badge for stat cards and action tiles. */
+@Composable
+fun IconBadge(icon: ImageVector, tint: Color, modifier: Modifier = Modifier, box: Dp = 32.dp, rotation: State<Float>? = null) {
+    val shape = RoundedCornerShape(box * 0.32f)
+    Box(modifier.size(box).clip(shape).background(tint.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+        Icon(
+            icon, contentDescription = null, tint = tint,
+            modifier = Modifier.size(box * 0.56f).graphicsLayer { rotationZ = rotation?.value ?: 0f }
+        )
+    }
+}
+
+/** Keyboard hint, same font as the label next to it so both sit on one line. */
+@Composable
+fun Kbd(text: String, modifier: Modifier = Modifier) {
+    val p = pal
+    val shape = RoundedCornerShape(6.dp)
+    Box(
+        modifier.height(20.dp).clip(shape).background(p.raised).border(1.dp, p.stroke, shape).padding(horizontal = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text, color = p.hint, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1, style = TNum)
     }
 }
 
 // ------------------------------------------------------------------ controls
 
-/** Primary: filled accent. Secondary: neutral plate with a hairline; red text only for destructive actions. */
+/**
+ * Pill button. Primary: accent gradient. Secondary: raised plate with a hairline. color = hint: ghost.
+ * color = Bad: red tint for destructive actions. Squashes like jelly when pressed.
+ */
 @Composable
 fun Btn(
     text: String,
@@ -596,107 +516,133 @@ fun Btn(
     iconRotation: State<Float>? = null,
 ) {
     val p = pal
-    val fill = if (color == Color.Unspecified) p.accent else color
-    val fg = when {
-        primary -> if (fill.luminance() > 0.45f) InkOn else Color.White
-        color == Bad -> Bad
-        else -> p.text
-    }
-    val shape = RoundedCornerShape(7.dp)
     val src = remember { MutableInteractionSource() }
     val hovered by src.collectIsHoveredAsState()
-    val bg = when {
-        primary -> if (hovered && enabled) lerp(fill, Color.White, 0.08f) else fill
-        hovered && enabled -> lerp(p.raised, p.text, 0.06f)
-        else -> p.raised
+    val solid = primary && color != Color.Unspecified && color != p.accent
+    val ghost = !primary && color == p.hint
+    val danger = !primary && color == Bad
+    val fg = when {
+        primary -> if ((if (solid) color else p.accent).luminance() > 0.5f) InkOn else Color.White
+        danger -> Bad
+        else -> p.text
     }
-    var m = modifier.alpha(if (enabled) 1f else 0.45f).clip(shape).background(bg)
-    if (!primary) m = m.border(1.dp, p.stroke, shape)
+    val shape = RoundedCornerShape(50)
+    val fill: Brush = when {
+        solid -> SolidColor(color)
+        primary -> p.accentBrush
+        ghost -> SolidColor(if (hovered && enabled) p.hover else Color.Transparent)
+        danger -> SolidColor(Bad.copy(alpha = if (hovered && enabled) 0.18f else 0.11f))
+        else -> SolidColor(if (hovered && enabled) lerp(p.raised, p.text, 0.06f) else p.raised)
+    }
+    var m = modifier.squish(src, enabled).alpha(if (enabled) 1f else 0.45f).heightIn(min = 34.dp).clip(shape).background(fill)
+    if (!primary && !ghost && !danger) m = m.border(1.dp, p.stroke, shape)
+    if (primary && hovered && enabled) m = m.background(Color.White.copy(alpha = 0.1f))
     Row(
         m.hoverable(src, enabled)
             .clickable(interactionSource = src, indication = null, enabled = enabled, onClick = onClick).hand()
-            .padding(horizontal = 12.dp, vertical = 7.dp),
+            .padding(horizontal = 15.dp, vertical = 7.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) {
             Icon(
-                icon, contentDescription = null, tint = if (primary || color == Bad) fg else p.hint,
-                modifier = Modifier.size(15.dp).graphicsLayer { rotationZ = iconRotation?.value ?: 0f }
+                icon, contentDescription = null, tint = if (primary || danger) fg else p.hint,
+                modifier = Modifier.size(16.dp).graphicsLayer { rotationZ = iconRotation?.value ?: 0f }
             )
-            Spacer(Modifier.width(7.dp))
+            Spacer(Modifier.width(8.dp))
         }
-        Text(text, color = fg, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(text, color = fg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
 fun IconBtn(icon: ImageVector, desc: String, onClick: () -> Unit, tint: Color = Color.Unspecified, enabled: Boolean = true, size: Dp = 32.dp) {
+    val src = remember { MutableInteractionSource() }
     Box(
-        Modifier.size(size).alpha(if (enabled) 1f else 0.4f).clip(RoundedCornerShape(6.dp)).press(enabled, onClick),
+        Modifier.size(size).squish(src, enabled, 0.88f).alpha(if (enabled) 1f else 0.4f).clip(CircleShape).pressWith(src, enabled, onClick),
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, contentDescription = desc, tint = if (tint == Color.Unspecified) pal.hint else tint, modifier = Modifier.size(size * 0.5f))
+        Icon(
+            icon, contentDescription = desc, tint = if (tint == Color.Unspecified) pal.hint else tint,
+            modifier = Modifier.size((size * 0.56f).coerceIn(14.dp, 22.dp))
+        )
     }
 }
 
 @Composable
 fun RChip(text: String, selected: Boolean, count: Int? = null, icon: ImageVector? = null, onClick: () -> Unit) {
     val p = pal
-    val bg by animateColorAsState(if (selected) p.accent.copy(alpha = if (p.dark) 0.18f else 0.12f) else Color.Transparent, tween(140))
-    val line by animateColorAsState(if (selected) p.accent.copy(alpha = 0.55f) else p.stroke, tween(140))
-    val shape = RoundedCornerShape(6.dp)
+    val bg by animateColorAsState(
+        if (selected) p.accent.copy(alpha = if (p.dark) 0.16f else 0.11f) else p.accent.copy(alpha = 0f), Fluid.soft(), label = "chipBg"
+    )
+    val line by animateColorAsState(if (selected) p.accent.copy(alpha = 0.5f) else p.stroke, Fluid.soft(), label = "chipLine")
+    val shape = RoundedCornerShape(50)
+    val src = remember { MutableInteractionSource() }
     Row(
-        Modifier.clip(shape).background(bg).border(1.dp, line, shape)
-            .press(onClick = onClick).padding(horizontal = 10.dp, vertical = 5.dp),
+        Modifier.squish(src).height(30.dp).clip(shape).background(bg).border(1.dp, line, shape)
+            .pressWith(src, onClick = onClick).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) {
-            Icon(icon, contentDescription = null, tint = if (selected) p.text else Yellow, modifier = Modifier.size(13.dp))
+            Icon(icon, contentDescription = null, tint = if (selected) p.accent else Yellow, modifier = Modifier.size(14.dp))
             Spacer(Modifier.width(6.dp))
         }
-        Text(text, color = if (selected) p.text else p.hint, fontSize = 13.sp, fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal, maxLines = 1)
+        Text(text, color = if (selected) p.text else p.hint, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
         if (count != null) {
             Spacer(Modifier.width(6.dp))
-            Text("$count", color = p.hint, fontSize = 12.sp, style = TNum)
+            Text("$count", color = if (selected) p.accent else p.hint.copy(alpha = 0.8f), fontSize = 12.sp, fontWeight = FontWeight.Medium, style = TNum)
         }
     }
 }
 
+/** Gooey switch (see shared Fluid.kt). */
 @Composable
 fun Toggle(checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     val p = pal
-    val t by animateFloatAsState(if (checked) 1f else 0f, tween(140))
-    val track = lerp(if (p.dark) Color(0xFF2A2B31) else Color(0xFFD9DADF), p.accent, t)
-    Box(
-        Modifier.size(width = 34.dp, height = 20.dp).alpha(if (enabled) 1f else 0.5f)
-            .clip(CircleShape).background(track)
-            .clickable(enabled = enabled, interactionSource = remember { MutableInteractionSource() }, indication = null) { onChange(!checked) }
-            .hand()
-            .padding(3.dp)
-    ) {
-        Box(Modifier.offset(x = 14.dp * t).size(14.dp).clip(CircleShape).background(Color.White))
-    }
+    GooeyToggle(
+        checked = checked, onChange = onChange, on = p.accent, on2 = p.accent,
+        off = if (p.dark) Color(0xFF2C2E35) else Color(0xFFD6D6D2), enabled = enabled,
+        // a light accent (graphite in the dark theme) needs a dark thumb to stay visible
+        thumb = if (checked && p.accent.luminance() > 0.6f) p.onAccent else Color.White
+    )
 }
 
+/**
+ * Segmented control with a fluid indicator: the pill stretches toward the new option and catches up.
+ * accent = true fills the indicator with the accent gradient.
+ */
 @Composable
-fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, accent: Boolean = false) {
     val p = pal
-    Row(modifier.fillMaxWidth().height(32.dp).clip(RoundedCornerShape(7.dp)).background(p.raised).padding(2.dp)) {
+    val n = options.size.coerceAtLeast(1)
+    val span = fluidSpan(selected.toFloat(), selected + 1f)
+    val shape = RoundedCornerShape(50)
+    val pill = if (p.dark) Color(0xFF30333A) else Color.White
+    val brush = p.accentBrush
+    val shadow = Color.Black.copy(alpha = if (p.dark) 0.28f else 0.08f)
+    Row(
+        modifier.fillMaxWidth().height(36.dp).clip(shape).background(p.raised).border(1.dp, p.stroke, shape)
+            .drawBehind {
+                val inset = 3.dp.toPx()
+                val w = (size.width - inset * 2f) / n
+                val x0 = inset + span.start.value * w
+                val x1 = inset + span.end.value * w
+                val h = size.height - inset * 2f
+                val cr = CornerRadius(h / 2f, h / 2f)
+                drawRoundRect(shadow, Offset(x0, inset + 1.dp.toPx()), Size(x1 - x0, h), cr)
+                if (accent) drawRoundRect(brush, Offset(x0, inset), Size(x1 - x0, h), cr) else drawRoundRect(pill, Offset(x0, inset), Size(x1 - x0, h), cr)
+            }
+            .padding(3.dp)
+    ) {
         options.forEachIndexed { i, t ->
             val sel = i == selected
-            val inner = RoundedCornerShape(5.dp)
-            val bg by animateColorAsState(if (sel) (if (p.dark) Color(0xFF2A2B31) else Color.White) else Color.Transparent, tween(140))
+            val fg by animateColorAsState(if (sel) (if (accent) p.onAccent else p.text) else p.hint, tween(180), label = "segment")
             Box(
-                Modifier.weight(1f).fillMaxHeight().clip(inner).background(bg)
-                    .border(1.dp, if (sel) p.stroke else Color.Transparent, inner)
+                Modifier.weight(1f).fillMaxHeight().clip(shape)
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onSelect(i) }.hand(),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    t, color = if (sel) p.text else p.hint, fontSize = 13.sp,
-                    fontWeight = if (sel) FontWeight.Medium else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis
-                )
+                Text(t, color = fg, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -714,25 +660,31 @@ fun Field(
 ) {
     val p = pal
     val ff = if (mono) FontFamily.Monospace else FontFamily.Default
-    val shape = RoundedCornerShape(7.dp)
+    val shape = RoundedCornerShape(12.dp)
+    val src = remember { MutableInteractionSource() }
+    val focused by src.collectIsFocusedAsState()
+    val line by animateColorAsState(if (focused) p.accent.copy(alpha = 0.7f) else p.stroke, tween(160), label = "field")
+    // placeholder and input share one style, so the caret line matches the hint exactly
+    val ts = TextStyle(color = p.text, fontSize = 13.sp, fontFamily = ff)
     Row(
-        modifier.clip(shape).background(if (onCard) p.raised else p.surface).border(1.dp, p.stroke, shape)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+        modifier.heightIn(min = 38.dp).clip(shape).background(if (onCard) p.raised else p.surface).border(1.dp, line, shape)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (leading != null) {
-            Icon(leading, contentDescription = null, tint = p.hint, modifier = Modifier.size(15.dp))
-            Spacer(Modifier.width(8.dp))
+            Icon(leading, contentDescription = null, tint = if (focused) p.accent else p.hint, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(9.dp))
         }
-        Box(Modifier.weight(1f)) {
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
             if (value.isEmpty()) {
-                Text(placeholder, color = p.hint.copy(alpha = 0.7f), fontSize = 13.sp, fontFamily = ff, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(placeholder, style = ts.copy(color = p.hint.copy(alpha = 0.7f)), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             BasicTextField(
                 value = value,
                 onValueChange = onChange,
                 singleLine = true,
-                textStyle = TextStyle(color = p.text, fontSize = 13.sp, fontFamily = ff),
+                textStyle = ts,
+                interactionSource = src,
                 cursorBrush = SolidColor(p.accent),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -745,9 +697,9 @@ fun Field(
 @Composable
 fun SettingRow(title: String, subtitle: String? = null, enabled: Boolean = true, onClick: (() -> Unit)? = null, trailing: @Composable RowScope.() -> Unit = {}) {
     val p = pal
-    var m: Modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.45f)
+    var m: Modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).alpha(if (enabled) 1f else 0.45f)
     if (onClick != null && enabled) m = m.press(onClick = onClick)
-    Row(m.padding(horizontal = 16.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(m.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(title, color = p.text, fontSize = 13.5.sp)
             if (subtitle != null) Text(subtitle, color = p.hint, fontSize = 12.sp, lineHeight = 16.sp)
@@ -778,29 +730,25 @@ fun SliderRow(
     val p = pal
     var raw by remember(value) { mutableFloatStateOf(value.toFloat()) }
     val s = step.coerceAtLeast(1)
+    val span = (range.last - range.first).coerceAtLeast(1).toFloat()
     fun snap(f: Float): Int = (((f - range.first) / s).roundToInt() * s + range.first).coerceIn(range.first, range.last)
-    Column(Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.45f).padding(start = 16.dp, end = 16.dp, top = 11.dp, bottom = 4.dp)) {
+    Column(Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.45f).padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(title, color = p.text, fontSize = 13.5.sp)
                 if (subtitle != null) Text(subtitle, color = p.hint, fontSize = 12.sp, lineHeight = 16.sp)
             }
-            Text(format(snap(raw)), color = p.hint, fontSize = 13.sp, style = TNum)
+            Text(format(snap(raw)), color = p.text, fontSize = 13.sp, fontWeight = FontWeight.Medium, style = TNum)
         }
-        Slider(
-            value = raw,
-            onValueChange = { nv ->
-                raw = nv
-                val r = snap(nv)
+        Spacer(Modifier.height(4.dp))
+        FluidSlider(
+            value = (raw - range.first) / span,
+            onChange = { f ->
+                raw = range.first + f * span
+                val r = snap(raw)
                 if (r != value) onChange(r)
             },
-            valueRange = range.first.toFloat()..range.last.toFloat(),
-            enabled = enabled,
-            colors = SliderDefaults.colors(
-                thumbColor = p.accent, activeTrackColor = p.accent, inactiveTrackColor = p.raised,
-                activeTickColor = Color.Transparent, inactiveTickColor = Color.Transparent
-            ),
-            modifier = Modifier.height(28.dp)
+            track = p.faint, fill = p.accent, fill2 = p.accent2, enabled = enabled
         )
     }
 }
@@ -809,10 +757,10 @@ fun SliderRow(
 @Composable
 fun ChoiceRow(title: String, options: List<String>, selected: Int, subtitle: String? = null, enabled: Boolean = true, onSelect: (Int) -> Unit) {
     val p = pal
-    Column(Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.45f).padding(horizontal = 16.dp, vertical = 11.dp)) {
+    Column(Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.45f).padding(horizontal = 16.dp, vertical = 12.dp)) {
         Text(title, color = p.text, fontSize = 13.5.sp)
         if (subtitle != null) Text(subtitle, color = p.hint, fontSize = 12.sp, lineHeight = 16.sp)
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(10.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             options.forEachIndexed { i, o -> RChip(o, i == selected) { if (enabled) onSelect(i) } }
         }
@@ -822,7 +770,7 @@ fun ChoiceRow(title: String, options: List<String>, selected: Int, subtitle: Str
 @Composable
 fun FieldRow(title: String, value: String, placeholder: String, subtitle: String? = null, mono: Boolean = true, onChange: (String) -> Unit) {
     val p = pal
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 11.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
         Text(title, color = p.text, fontSize = 13.5.sp)
         if (subtitle != null) Text(subtitle, color = p.hint, fontSize = 12.sp, lineHeight = 16.sp)
         Spacer(Modifier.height(8.dp))
@@ -836,15 +784,15 @@ fun FieldRow(title: String, value: String, placeholder: String, subtitle: String
 @Composable
 fun FlagBox(code: String, size: Dp = 40.dp) {
     val p = pal
-    val shape = RoundedCornerShape(size * 0.2f)
+    val shape = RoundedCornerShape(size * 0.28f)
     val known = code in FLAG_CODES
     Box(Modifier.size(size).clip(shape).background(p.raised), contentAlignment = Alignment.Center) {
         when {
             known -> Canvas(Modifier.fillMaxSize()) { drawFlag(code) }
-            code.isEmpty() -> Icon(Ico.Globe, contentDescription = null, tint = p.hint, modifier = Modifier.size(size * 0.46f))
-            else -> Text(code, color = p.text, fontSize = (size.value * 0.32f).sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace)
+            code.isEmpty() -> Icon(Ico.Globe, contentDescription = null, tint = p.hint, modifier = Modifier.size(size * 0.52f))
+            else -> Text(code, color = p.text, fontSize = (size.value * 0.32f).sp, fontWeight = FontWeight.SemiBold, style = TNum)
         }
-        Box(Modifier.matchParentSize().border(1.dp, p.stroke, shape))
+        Box(Modifier.matchParentSize().border(1.dp, if (p.dark) Color.White.copy(alpha = 0.1f) else p.stroke, shape))
     }
 }
 
@@ -853,9 +801,9 @@ fun SignalBars(d: Long, modifier: Modifier = Modifier) {
     val p = pal
     val col = delayColor(d)
     val lvl = delayLevel(d)
-    Row(modifier.height(11.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
+    Row(modifier.height(12.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
         for (i in 1..4) {
-            Box(Modifier.width(2.5.dp).height((2 + 2.25f * i).dp).clip(RoundedCornerShape(1.dp)).background(if (i <= lvl) col else p.faint))
+            Box(Modifier.width(3.dp).height((3 + 2.25f * i).dp).clip(RoundedCornerShape(50)).background(if (i <= lvl) col else p.faint))
         }
     }
 }
@@ -863,11 +811,11 @@ fun SignalBars(d: Long, modifier: Modifier = Modifier) {
 @Composable
 fun LatencyText(d: Long, size: TextUnit = 17.sp) {
     val p = pal
-    val col by animateColorAsState(delayColor(d), tween(300))
+    val col by animateColorAsState(delayColor(d), tween(300), label = "latency")
     if (d >= 0L || d == -2L) {
         Row(verticalAlignment = Alignment.Bottom) {
-            Text(if (d == -2L) "—" else "$d", color = if (d >= 0) p.text else col, fontSize = size, fontWeight = FontWeight.Medium, style = TNum, maxLines = 1)
-            if (d >= 0) Text(" ms", color = p.hint, fontSize = 10.sp, modifier = Modifier.padding(bottom = 2.dp))
+            Text(if (d == -2L) "—" else "$d", color = if (d >= 0) p.text else col, fontSize = size, fontWeight = FontWeight.SemiBold, style = TNum, maxLines = 1)
+            if (d >= 0) Text(" ms", color = p.hint, fontSize = 10.5.sp, modifier = Modifier.padding(bottom = 2.dp))
         }
     } else {
         Icon(Ico.Close, contentDescription = "нет ответа", tint = col, modifier = Modifier.size((size.value * 0.9f).dp))
@@ -883,22 +831,22 @@ fun DelayBadge(d: Long) {
         d < 0 -> "нет"
         else -> "$d ms"
     }
-    val shape = RoundedCornerShape(6.dp)
+    val shape = RoundedCornerShape(50)
     Row(
-        Modifier.clip(shape).border(1.dp, p.stroke, shape).padding(horizontal = 7.dp, vertical = 3.dp),
+        Modifier.height(24.dp).clip(shape).background(col.copy(alpha = 0.12f)).padding(horizontal = 9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.size(6.dp).clip(CircleShape).background(col))
-        Spacer(Modifier.width(5.dp))
-        Text(txt, color = p.text, fontSize = 12.sp, maxLines = 1, style = TNum)
+        Spacer(Modifier.width(6.dp))
+        Text(txt, color = p.text, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, style = TNum)
     }
 }
 
 @Composable
 fun SlimProgress(progress: Float, modifier: Modifier = Modifier) {
     val p = pal
-    val v by animateFloatAsState(progress.coerceIn(0f, 1f), tween(300))
-    Box(modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(50)).background(p.faint)) {
-        Box(Modifier.fillMaxWidth(v).fillMaxHeight().clip(RoundedCornerShape(50)).background(p.accent))
+    val v by animateFloatAsState(progress.coerceIn(0f, 1f), Fluid.soft(), label = "progress")
+    Box(modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(50)).background(p.faint)) {
+        Box(Modifier.fillMaxWidth(v).fillMaxHeight().clip(RoundedCornerShape(50)).background(p.accentBrush))
     }
 }

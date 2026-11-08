@@ -23,6 +23,13 @@ android {
         versionName = ciVersionName
     }
 
+    // Fluid UI kit, lettermark and glyphs shared with the Windows app
+    sourceSets {
+        getByName("main") {
+            java.srcDir("../shared/src")
+        }
+    }
+
     signingConfigs {
         create("release") {
             if (releaseKeystore != null) {

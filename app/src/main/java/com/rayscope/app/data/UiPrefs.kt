@@ -57,9 +57,9 @@ data class UiPrefs(
     }
 
     companion object {
-        val ACCENT_NAMES = listOf("Индиго", "Синий", "Графит", "Зелёный", "Янтарь", "Красный", "Фиалка", "Бирюза")
-        val ACCENTS_DARK = longArrayOf(0xFF7C84FF, 0xFF4E8EF7, 0xFFE6E6E9, 0xFF4CB782, 0xFFE2A93B, 0xFFEB5757, 0xFFA48CF2, 0xFF3FB8A9)
-        val ACCENTS_LIGHT = longArrayOf(0xFF5864D8, 0xFF2F6FE0, 0xFF1A1B1F, 0xFF1F8A5B, 0xFFB07A10, 0xFFD13B3B, 0xFF7457D6, 0xFF168A7E)
+        val ACCENT_NAMES = listOf("Графит", "Индиго", "Синий", "Зелёный", "Янтарь", "Красный", "Фиалка", "Бирюза")
+        val ACCENTS_DARK = longArrayOf(0xFFE9EAED, 0xFF7C84FF, 0xFF4E8EF7, 0xFF4CB782, 0xFFE2A93B, 0xFFEB5757, 0xFFA48CF2, 0xFF3FB8A9)
+        val ACCENTS_LIGHT = longArrayOf(0xFF15171C, 0xFF5864D8, 0xFF2F6FE0, 0xFF1F8A5B, 0xFFB07A10, 0xFFD13B3B, 0xFF7457D6, 0xFF168A7E)
 
         /** ARGB of the dark-theme accent (widgets are always dark). */
         fun accentArgb(index: Int): Int = ACCENTS_DARK.getOrElse(index) { ACCENTS_DARK[0] }.toInt()

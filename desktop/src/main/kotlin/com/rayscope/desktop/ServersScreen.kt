@@ -86,18 +86,16 @@ fun ServersScreen() {
     val effSel = selId ?: servers.firstOrNull()?.id
     val open = openId?.let { id -> servers.firstOrNull { it.id == id } }
 
-    Row(Modifier.fillMaxSize()) {
-        Column(Modifier.weight(1f).fillMaxHeight().padding(start = 32.dp, end = 24.dp, top = 28.dp)) {
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().padding(start = PAGE_PAD, end = PAGE_PAD, top = PAGE_TOP)) {
             Header("Серверы", "Всего " + servers.size + " · рабочих " + counts[1]) {
-                Btn("Вставить", { Actions.go { Actions.importText(Clip.paste()) } }, icon = Ico.Clipboard)
-                Spacer(Modifier.width(8.dp))
-                Btn("Подписка", { addSub = true }, icon = Ico.Plus)
-                Spacer(Modifier.width(8.dp))
+                IconBtn(Ico.Clipboard, "Вставить из буфера", { Actions.go { Actions.importText(Clip.paste()) } })
+                IconBtn(Ico.Plus, "Добавить подписку", { addSub = true })
+                Spacer(Modifier.width(4.dp))
                 Btn(
-                    "Пинг всех", { Actions.go { Actions.testAll() } }, primary = true, icon = Ico.Bolt,
+                    "Пинг", { Actions.go { Actions.testAll() } }, primary = true, icon = Ico.Bolt,
                     enabled = !testing && servers.isNotEmpty()
                 )
-                Spacer(Modifier.width(4.dp))
                 Box {
                     IconBtn(Ico.More, "Ещё", { menu = true })
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -142,7 +140,7 @@ fun ServersScreen() {
             if (subs.isNotEmpty()) {
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     subs.forEach { sub -> SubCard(sub, servers.count { it.subId == sub.id }, updating) }
                 }
@@ -152,10 +150,10 @@ fun ServersScreen() {
                 EmptyServers { addSub = true }
             } else {
                 Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Field(query, { query = it }, "Поиск по имени, адресу, протоколу", Modifier.weight(1f), leading = Ico.Search, onCard = false)
-                    Spacer(Modifier.width(10.dp))
+                    Field(query, { query = it }, "Поиск", Modifier.weight(1f), leading = Ico.Search, onCard = false)
+                    Spacer(Modifier.width(6.dp))
                     Box {
-                        Btn(SORT_NAMES[sortMode], { sortMenu = true }, icon = Ico.Sort, color = p.hint)
+                        IconBtn(Ico.Sort, "Сортировка: " + SORT_NAMES[sortMode], { sortMenu = true }, size = 36.dp)
                         DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
                             SORT_NAMES.forEachIndexed { i, n ->
                                 CheckItem(n, i == sortMode) {
@@ -203,8 +201,9 @@ fun ServersScreen() {
             }
         }
         if (open != null) {
-            Box(Modifier.width(1.dp).fillMaxHeight().background(p.stroke))
-            DetailPanel(open, subs, prefs.dev, st) { openId = null }
+            Box(Modifier.fillMaxSize().background(p.side)) {
+                DetailPanel(open, subs, prefs.dev, st) { openId = null }
+            }
         }
     }
 
@@ -280,23 +279,23 @@ private fun ServerRow(
     }
     Row(
         Modifier.fillMaxWidth().card(p, 14.dp, border).hoverable(src).clickable(onClick = onClick).hand()
-            .padding(horizontal = 14.dp, vertical = if (compact) 7.dp else 12.dp),
+            .padding(start = 10.dp, end = 6.dp, top = if (compact) 6.dp else 10.dp, bottom = if (compact) 6.dp else 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        FlagBox(s.countryCode(), if (compact) 30.dp else 40.dp)
-        Spacer(Modifier.width(12.dp))
+        FlagBox(s.countryCode(), if (compact) 28.dp else 36.dp)
+        Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    s.cleanName(), color = p.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                    s.cleanName(), color = p.text, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false)
                 )
                 if (live) {
                     Spacer(Modifier.width(8.dp))
-                    Tag("АКТИВЕН", Good)
+                    Box(Modifier.size(7.dp).clip(RoundedCornerShape(50)).background(Good))
                 } else if (connecting) {
                     Spacer(Modifier.width(8.dp))
-                    Tag("ПОДКЛЮЧЕНИЕ", Mid)
+                    Box(Modifier.size(7.dp).clip(RoundedCornerShape(50)).background(Mid))
                 }
             }
             if (!compact) {
@@ -307,9 +306,9 @@ private fun ServerRow(
                     add(s.securityLabel())
                     if (dev && s.tcpPing >= 0) add("tcp " + s.tcpPing)
                     val stab = s.stability()
-                    if (stab >= 0) add("стабильность $stab%")
+                    if (stab >= 0) add("$stab%")
                 }.joinToString(" · ")
-                Text(meta, color = p.hint, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, style = TNum)
+                Text(meta, color = p.hint, fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, style = TNum)
                 if (dev && s.isDead && s.lastError.isNotEmpty()) {
                     Text(s.lastError, color = Bad, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -317,13 +316,12 @@ private fun ServerRow(
         }
         IconBtn(
             if (s.favorite) Ico.StarFilled else Ico.Star, "Избранное", { Store.toggleFavorite(s.id) },
-            tint = if (s.favorite) Yellow else if (hover) p.hint else Color.Transparent, size = 30.dp
+            tint = if (s.favorite) Yellow else if (hover) p.hint else Color.Transparent, size = 28.dp
         )
-        Spacer(Modifier.width(4.dp))
+        Spacer(Modifier.width(2.dp))
         SignalBars(s.delay)
-        Spacer(Modifier.width(8.dp))
         Box(
-            Modifier.width(76.dp).clip(RoundedCornerShape(8.dp))
+            Modifier.width(58.dp).clip(RoundedCornerShape(8.dp))
                 .clickable(enabled = !testingOne && !testingAll) {
                     testingOne = true
                     Actions.go {
@@ -340,14 +338,14 @@ private fun ServerRow(
                 val r = spin()
                 Icon(Ico.Refresh, contentDescription = null, tint = p.hint, modifier = Modifier.size(16.dp).spinning(r))
             } else {
-                LatencyText(s.delay, if (compact) 14.sp else 16.sp)
+                LatencyText(s.delay, if (compact) 13.sp else 14.sp)
             }
         }
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(2.dp))
         IconBtn(
             Ico.Power, if (live) "Отключить" else "Подключить",
             { if (live || connecting) Engine.disconnect() else connectTo(s.id) },
-            tint = if (live || connecting) Bad else p.accent, size = 34.dp
+            tint = if (live || connecting) Bad else p.text, size = 32.dp
         )
     }
 }
@@ -356,7 +354,7 @@ private fun ServerRow(
 private fun SubCard(sub: Subscription, count: Int, updating: Boolean) {
     val p = pal
     var ask by remember { mutableStateOf(false) }
-    Column(Modifier.width(290.dp).card(p, 16.dp).padding(14.dp)) {
+    Column(Modifier.width(260.dp).card(p, 16.dp).padding(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconTile(Ico.Link, p.accent, 30.dp, 16.dp)
             Spacer(Modifier.width(10.dp))
@@ -398,17 +396,17 @@ private fun SubCard(sub: Subscription, count: Int, updating: Boolean) {
 @Composable
 private fun EmptyServers(onAddSub: () -> Unit) {
     val p = pal
-    Column(Modifier.fillMaxWidth().padding(top = 60.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.fillMaxWidth().padding(top = 36.dp, start = 8.dp, end = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         IconTile(Ico.Servers, p.accent, 64.dp, 30.dp)
         Spacer(Modifier.height(16.dp))
-        Text("Серверов пока нет", color = p.text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text("Серверов пока нет", color = p.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Text(
             "Скопируйте ссылку vless://, vmess://, trojan://, ss:// или hy2:// и нажмите «Вставить», либо добавьте подписку.",
-            color = p.hint, fontSize = 14.sp, textAlign = TextAlign.Center, lineHeight = 20.sp,
+            color = p.hint, fontSize = 13.sp, textAlign = TextAlign.Center, lineHeight = 19.sp,
             modifier = Modifier.widthIn(max = 440.dp).padding(top = 6.dp)
         )
         Spacer(Modifier.height(18.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Btn("Вставить из буфера", { Actions.go { Actions.importText(Clip.paste()) } }, primary = true, icon = Ico.Clipboard)
             Btn("Добавить подписку", onAddSub, icon = Ico.Plus)
         }
@@ -452,18 +450,18 @@ private fun DetailPanel(s: Server, subs: List<Subscription>, dev: Boolean, st: S
     var testing by remember(s.id) { mutableStateOf(false) }
     val live = st.serverId == s.id && st.state != ConnState.STOPPED
     Column(
-        Modifier.width(360.dp).fillMaxHeight().background(p.side).verticalScroll(rememberScrollState())
-            .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = TAB_SPACE),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(start = PAGE_PAD, end = PAGE_PAD, top = PAGE_TOP, bottom = TAB_SPACE),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            FlagBox(s.countryCode(), 48.dp)
+            FlagBox(s.countryCode(), 42.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(s.cleanName(), color = p.text, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(s.cleanName(), color = p.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(s.protocolLabel() + " · " + s.network.uppercase(), color = p.hint, fontSize = 12.sp)
             }
-            IconBtn(Ico.Close, "Закрыть", onClose)
+            IconBtn(Ico.Back, "Назад", onClose)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Btn(
