@@ -178,11 +178,34 @@ fun ServersScreen(onOpen: (String) -> Unit, onToggle: () -> Unit) {
                         clipboard.setText(AnnotatedString(Actions.exportAll()))
                         toast("Ссылки скопированы")
                     }
-                    if (ui.dev) {
-                        MItem(RayIcons.Signal, "TCP-пинг всех") {
-                            menuOpen = false
-                            scope.launch { Actions.tcpAll() }
+                    Text(
+                        "СПОСОБ ПИНГА", color = c.hint, fontSize = 11.sp, fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 2.dp)
+                    )
+                    val pm = Repo.settings.pingMode
+                    listOf("HTTP через ядро", "TCP", "ICMP").forEachIndexed { i, n ->
+                        val on = when (i) {
+                            0 -> pm == 0 || pm == 1
+                            1 -> pm == 2
+                            else -> pm == 3
                         }
+                        DropdownMenuItem(
+                            text = { Text(n, fontSize = 15.sp) },
+                            trailingIcon = {
+                                if (on) Icon(RayIcons.Check, contentDescription = null, tint = c.accent, modifier = Modifier.size(18.dp))
+                            },
+                            onClick = {
+                                menuOpen = false
+                                Repo.settings.pingMode = when (i) {
+                                    0 -> if (pm == 1) 1 else 0
+                                    1 -> 2
+                                    else -> 3
+                                }
+                                scope.launch { Actions.testAll() }
+                            }
+                        )
+                    }
+                    if (ui.dev) {
                         MItem(RayIcons.Clock, "Сбросить результаты") {
                             menuOpen = false
                             Repo.resetTests()
@@ -393,6 +416,8 @@ fun ServerCard(
                     if (ui.dev && s.tcpPing >= 0) add("tcp ${s.tcpPing}")
                     val st = s.stability()
                     if (st >= 0) add("$st%")
+                    // TCP and ICMP numbers don't compare with the real latency: say which one this is
+                    if (s.pingKind != 0 && s.delay >= 0) add(if (s.pingKind == 1) "пинг tcp" else "пинг icmp")
                 }
                 Text(
                     meta.joinToString(" · "), color = c.hint, fontSize = 12.sp, style = TNum,

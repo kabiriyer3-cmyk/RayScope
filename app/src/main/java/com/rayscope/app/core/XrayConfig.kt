@@ -140,6 +140,7 @@ object XrayConfig {
     }
 
     fun outbound(s: Server, st: Settings? = null, fragment: Boolean = false): JSONObject {
+        if (s.outbound.isNotEmpty()) return rawOutbound(s, st, fragment)
         val o = JSONObject().put("tag", "proxy")
         val set = JSONObject().put("address", s.address).put("port", s.port)
         when (s.protocol) {
@@ -189,6 +190,39 @@ object XrayConfig {
             )
         } else {
             o.put("mux", JSONObject().put("enabled", false).put("concurrency", -1))
+        }
+        return o
+    }
+
+    /**
+     * Outbound from a JSON subscription, exactly as the provider wrote it (VLESS encryption, xhttp extras and other
+     * things links can't carry stay intact). Only the tag and our own fragment, TCP options and mux are added.
+     */
+    private fun rawOutbound(s: Server, st: Settings?, fragment: Boolean): JSONObject {
+        val o = JSONObject(s.outbound)
+        o.put("tag", "proxy")
+        val udpOnly = s.protocol == "hysteria2" || s.network == "hysteria"
+        val stream = o.optJSONObject("streamSettings") ?: JSONObject().also { o.put("streamSettings", it) }
+        val sock = stream.optJSONObject("sockopt") ?: JSONObject()
+        sock.remove("dialerProxy")
+        if (fragment && !udpOnly) sock.put("dialerProxy", "fragment")
+        if (st != null && !udpOnly) {
+            if (st.tcpFastOpen) sock.put("tcpFastOpen", true)
+            if (st.keepAliveIdle > 0) sock.put("tcpKeepAliveIdle", st.keepAliveIdle)
+        }
+        if (sock.length() > 0) stream.put("sockopt", sock) else stream.remove("sockopt")
+        if (!o.has("mux")) {
+            if (st != null && st.muxEnabled && s.flow.isEmpty() && !udpOnly) {
+                o.put(
+                    "mux", JSONObject()
+                        .put("enabled", true)
+                        .put("concurrency", st.muxConcurrency.coerceIn(1, 1024))
+                        .put("xudpConcurrency", st.muxXudpConcurrency.coerceIn(1, 1024))
+                        .put("xudpProxyUDP443", st.muxXudpQuic.ifEmpty { "reject" })
+                )
+            } else {
+                o.put("mux", JSONObject().put("enabled", false).put("concurrency", -1))
+            }
         }
         return o
     }

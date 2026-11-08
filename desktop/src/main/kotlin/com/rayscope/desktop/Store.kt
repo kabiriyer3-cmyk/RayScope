@@ -1,5 +1,6 @@
 package com.rayscope.desktop
 
+import com.rayscope.sub.SubFormats
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -120,7 +121,12 @@ object Store {
 
     fun resetTests() {
         servers.update { l ->
-            l.map { it.copy(delay = Server.DELAY_UNTESTED, tcpPing = Server.DELAY_UNTESTED, lastError = "", successCount = 0, failCount = 0) }
+            l.map {
+                it.copy(
+                    delay = Server.DELAY_UNTESTED, pingKind = 0, tcpPing = Server.DELAY_UNTESTED, lastError = "",
+                    successCount = 0, failCount = 0,
+                )
+            }
         }
         saveServers()
     }
@@ -151,6 +157,7 @@ object Store {
                     n.copy(
                         id = o.id,
                         delay = o.delay,
+                        pingKind = o.pingKind,
                         tcpPing = o.tcpPing,
                         lastTested = o.lastTested,
                         lastError = o.lastError,
@@ -182,6 +189,9 @@ object Actions {
     val progress = MutableStateFlow(0 to 0)
     val updating = MutableStateFlow(false)
 
+    /** Kind of the check running now (see [Tester.KINDS]), for the progress line. */
+    val running = MutableStateFlow(0)
+
     fun go(block: suspend () -> Unit) {
         scope.launch { block() }
     }
@@ -194,13 +204,25 @@ object Actions {
             Notice.show("Буфер обмена пуст")
             return@withContext
         }
-        if ((t.startsWith("http://") || t.startsWith("https://")) && t.lines().size == 1) {
-            addSubscription(t, "")
+        // happ://add/https://..., v2raytun://import/..., clash://install-config?url=...
+        val deep = SubFormats.deeplinkUrl(t)
+        if (deep != null) {
+            addSubscription(deep, "")
             return@withContext
         }
-        val list = LinkParser.parseMany(t)
+        if (t.startsWith("happ://", ignoreCase = true)) {
+            Notice.show("Зашифрованные ссылки happ:// не поддерживаются: скопируйте обычную ссылку на подписку")
+            return@withContext
+        }
+        // every https:// line is a subscription, the rest are servers (links, JSON configs, base64)
+        val lines = t.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        val urls = lines.filter { SubFormats.isHttp(it) && !it.contains(' ') }
+        for (u in urls) addSubscription(u, "")
+        val rest = lines.filterNot { it in urls }.joinToString("\n")
+        if (rest.isEmpty()) return@withContext
+        val list = LinkParser.parseMany(rest)
         if (list.isEmpty()) {
-            Notice.show("Не найдено ссылок vless / vmess / trojan / ss / hy2")
+            if (urls.isEmpty()) Notice.show("Не найдено ни ссылок vless / vmess / trojan / ss / hy2, ни подписки")
         } else {
             Store.add(list)
             if (Store.selectedId.value == null) Store.select(list.first().id)
@@ -210,8 +232,9 @@ object Actions {
     }
 
     suspend fun addSubscription(url: String, name: String) {
-        val sub = Subscription(url = url.trim(), name = name.trim())
-        updateSub(sub, silent = false)
+        val u = url.trim()
+        val existing = Store.subs.value.firstOrNull { it.url == u }
+        updateSub(existing ?: Subscription(url = u, name = name.trim()), silent = false)
     }
 
     suspend fun updateSub(sub: Subscription, silent: Boolean): Boolean = withContext(Dispatchers.IO) {
@@ -249,11 +272,13 @@ object Actions {
         }
     }
 
-    private fun applyResult(id: String, d: Long, err: String) {
+    private fun applyResult(id: String, d: Long, err: String, kind: Int = 0) {
         val ok = d >= 0
         Store.update(id) {
             it.copy(
                 delay = if (ok) d else Server.DELAY_FAILED,
+                pingKind = kind,
+                tcpPing = if (kind == 1) d else it.tcpPing,
                 lastTested = System.currentTimeMillis(),
                 lastError = err,
                 successCount = it.successCount + (if (ok) 1 else 0),
@@ -262,11 +287,18 @@ object Actions {
         }
     }
 
+    /** Ping every server the way the settings say: a request through the core, a TCP handshake or ICMP. */
+    suspend fun pingAll(kind: Int = Store.prefs.value.pingMode) {
+        if (kind == 1 || kind == 2) quickAll(kind) else testAll()
+    }
+
+    /** Real latency of every server through the core (also what "best server" relies on). */
     suspend fun testAll() = withContext(Dispatchers.IO) {
         if (testing.value) return@withContext
         val list = Store.servers.value
         if (list.isEmpty()) return@withContext
         testing.value = true
+        running.value = 0
         progress.value = 0 to list.size
         val done = AtomicInteger(0)
         try {
@@ -283,12 +315,68 @@ object Actions {
         }
     }
 
-    suspend fun testOne(id: String) = withContext(Dispatchers.IO) {
+    /** TCP handshake or ICMP for every server: seconds instead of minutes, but "answers" is not "works". */
+    private suspend fun quickAll(kind: Int) = withContext(Dispatchers.IO) {
+        if (testing.value) return@withContext
+        val list = Store.servers.value
+        if (list.isEmpty()) return@withContext
+        testing.value = true
+        running.value = kind
+        progress.value = 0 to list.size
+        val p = Store.prefs.value
+        val done = AtomicInteger(0)
+        val sem = Semaphore(32)
+        try {
+            // Hysteria2 runs over UDP: there is no TCP port to knock on, so it goes through the core
+            val udp = if (kind == 1) list.filter { it.protocol == "hysteria2" } else emptyList()
+            val udpIds = udp.map { it.id }.toSet()
+            coroutineScope {
+                list.filter { it.id !in udpIds }.map { s ->
+                    async {
+                        sem.withPermit {
+                            val (d, err) = quick(s, kind, p.pingTimeout)
+                            applyResult(s.id, d, err, kind)
+                            progress.value = done.incrementAndGet() to list.size
+                        }
+                    }
+                }.awaitAll()
+            }
+            if (udp.isNotEmpty()) {
+                Tester.realDelays(udp, p) { id, d, err ->
+                    applyResult(id, d, err)
+                    progress.value = done.incrementAndGet() to list.size
+                }
+            }
+            Store.saveServers()
+            val ok = Store.servers.value.count { it.isWorking }
+            Log.add("Пинг ${Tester.KINDS[kind]}: отвечают $ok из ${list.size}")
+            Notice.show("${Tester.KINDS[kind]}: отвечают $ok из ${list.size}")
+        } finally {
+            testing.value = false
+            running.value = 0
+        }
+    }
+
+    private fun quick(s: Server, kind: Int, timeout: Int): Pair<Long, String> = if (kind == 2) {
+        val d = Tester.icmp(s, timeout)
+        d to if (d >= 0) "" else "Не отвечает на ping: ICMP часто закрыт, это не значит, что сервер не работает"
+    } else {
+        val d = Tester.tcp(s, timeout)
+        d to if (d >= 0) "" else "Порт не отвечает"
+    }
+
+    /** One server, the same way as the Ping button. */
+    suspend fun testOne(id: String, kind: Int = Store.prefs.value.pingMode) = withContext(Dispatchers.IO) {
         val s = Store.server(id) ?: return@withContext
         val p = Store.prefs.value
-        Tester.realDelays(listOf(s), p) { sid, d, err -> applyResult(sid, d, err) }
-        val t = Tester.tcp(s, p.pingTimeout)
-        Store.update(id) { it.copy(tcpPing = t) }
+        if (kind == 2 || (kind == 1 && s.protocol != "hysteria2")) {
+            val (d, err) = quick(s, kind, p.pingTimeout)
+            applyResult(id, d, err, kind)
+        } else {
+            Tester.realDelays(listOf(s), p) { sid, d, err -> applyResult(sid, d, err) }
+            val t = Tester.tcp(s, p.pingTimeout)
+            Store.update(id) { it.copy(tcpPing = t) }
+        }
         Store.saveServers()
     }
 

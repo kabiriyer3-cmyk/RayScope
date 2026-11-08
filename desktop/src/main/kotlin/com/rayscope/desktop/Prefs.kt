@@ -14,6 +14,8 @@ data class Prefs(
     val muxConcurrency: Int = 8,
     val tcpFastOpen: Boolean = false,
     val testUrl: String = DEFAULT_TEST_URL,
+    /** how the Ping button measures: 0 a request through the core, 1 TCP handshake, 2 ICMP */
+    val pingMode: Int = 0,
     val pingTimeout: Int = 5000,
     val concurrency: Int = 8,
     val goodPing: Int = 300,
@@ -65,6 +67,7 @@ data class Prefs(
         .put("muxConcurrency", muxConcurrency)
         .put("tcpFastOpen", tcpFastOpen)
         .put("testUrl", testUrl)
+        .put("pingMode", pingMode)
         .put("pingTimeout", pingTimeout)
         .put("concurrency", concurrency)
         .put("goodPing", goodPing)
@@ -116,6 +119,7 @@ data class Prefs(
                 muxConcurrency = o.optInt("muxConcurrency", d.muxConcurrency),
                 tcpFastOpen = o.optBoolean("tcpFastOpen", d.tcpFastOpen),
                 testUrl = o.optString("testUrl", d.testUrl).ifBlank { DEFAULT_TEST_URL },
+                pingMode = o.optInt("pingMode", d.pingMode).coerceIn(0, 2),
                 pingTimeout = o.optInt("pingTimeout", d.pingTimeout),
                 concurrency = o.optInt("concurrency", d.concurrency),
                 goodPing = o.optInt("goodPing", d.goodPing),

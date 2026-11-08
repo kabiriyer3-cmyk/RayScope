@@ -33,9 +33,10 @@ fun SettingsScreen(onOpen: (Route) -> Unit) {
 
     val profile = buildList {
         add("ping " + when (st.pingMode) {
-            1 -> "real"
+            1 -> "http"
             2 -> "tcp"
-            else -> "real+tcp"
+            3 -> "icmp"
+            else -> "http+tcp"
         })
         add("timeout ${st.pingTimeout / 1000.0}s".replace(".0s", "s"))
         add("x${st.concurrency}")

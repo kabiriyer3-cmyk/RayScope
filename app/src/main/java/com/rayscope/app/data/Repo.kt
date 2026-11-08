@@ -107,7 +107,12 @@ object Repo {
 
     fun resetTests() {
         servers.update { l ->
-            l.map { it.copy(delay = Server.DELAY_UNTESTED, tcpPing = Server.DELAY_UNTESTED, lastError = "", successCount = 0, failCount = 0) }
+            l.map {
+                it.copy(
+                    delay = Server.DELAY_UNTESTED, pingKind = 0, tcpPing = Server.DELAY_UNTESTED, lastError = "",
+                    successCount = 0, failCount = 0,
+                )
+            }
         }
         save()
     }
@@ -135,6 +140,7 @@ object Repo {
                 if (o == null || !used.add(o.id)) n else n.copy(
                     id = o.id,
                     delay = o.delay,
+                    pingKind = o.pingKind,
                     tcpPing = o.tcpPing,
                     lastTested = o.lastTested,
                     lastError = o.lastError,
