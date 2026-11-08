@@ -26,6 +26,11 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
+import com.rayscope.fluid.PillTabs
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -277,52 +282,28 @@ fun AppRoot() {
 
 private data class TabItem(val icon: ImageVector, val label: String)
 
-/** Flat bottom bar on the page background with a hairline on top. The active tab is simply brighter. */
+/** Floating pill tab bar, the same one as on Windows: the active tab stretches into a pill with its label. */
 @Composable
 private fun BottomBar(tab: Int, connected: Boolean, onTab: (Int) -> Unit) {
     val c = ray
-    val labels = look.tabLabels
     val items = listOf(
-        TabItem(RayIcons.Home, "Главная"),
-        TabItem(RayIcons.Servers, "Серверы"),
-        TabItem(RayIcons.Radar, "Проверка"),
-        TabItem(RayIcons.Sliders, "Настройки"),
+        RayIcons.Home to "Главная",
+        RayIcons.Servers to "Серверы",
+        RayIcons.Radar to "Проверка",
+        RayIcons.Sliders to "Настройки",
     )
-    Column(Modifier.fillMaxWidth().background(c.bg)) {
-        Box(Modifier.fillMaxWidth().height(1.dp).background(c.stroke))
-        Row(
-            Modifier.fillMaxWidth().navigationBarsPadding().height(if (labels) 58.dp else 50.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            items.forEachIndexed { i, item ->
-                val sel = i == tab
-                val color by animateColorAsState(if (sel) c.text else c.hint.copy(alpha = 0.8f), tween(120), label = "tab$i")
-                Column(
-                    Modifier.weight(1f).fillMaxHeight().clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) { onTab(i) },
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Box {
-                        Icon(item.icon, contentDescription = item.label, tint = color, modifier = Modifier.size(22.dp))
-                        if (i == 0 && connected) {
-                            Box(
-                                Modifier.align(Alignment.TopEnd).offset(x = 3.dp, y = (-1).dp).size(7.dp)
-                                    .clip(CircleShape).background(Good)
-                            )
-                        }
-                    }
-                    if (labels) {
-                        Spacer(Modifier.height(3.dp))
-                        Text(
-                            item.label, color = color, fontSize = 11.sp,
-                            fontWeight = if (sel) FontWeight.Medium else FontWeight.Normal, maxLines = 1
-                        )
-                    }
-                }
-            }
-        }
+    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp)) {
+        PillTabs(
+            items = items,
+            selected = tab,
+            onSelect = onTab,
+            track = if (c.dark) Color(0xFF1C1D21) else Color.White,
+            pill = c.accent,
+            onPill = c.onAccent,
+            ink = c.hint,
+            modifier = Modifier.border(1.dp, c.stroke, RoundedCornerShape(50)),
+            dotIndex = 0,
+            dot = if (connected && tab != 0) Good else Color.Unspecified,
+        )
     }
 }
