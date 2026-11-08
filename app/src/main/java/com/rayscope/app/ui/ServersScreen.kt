@@ -39,6 +39,8 @@ import com.rayscope.app.model.Server
 import com.rayscope.app.model.Subscription
 import com.rayscope.app.util.Fmt
 import com.rayscope.app.util.toast
+import com.rayscope.fluid.LiveIcon
+import com.rayscope.fluid.rememberIconFx
 import kotlinx.coroutines.launch
 
 enum class SFilter(val title: String) {
@@ -411,15 +413,22 @@ fun ServerCard(
                 Spacer(Modifier.width(8.dp))
                 LatencyText(s.delay, if (compact) 14.sp else 15.sp)
             }
+            val favFx = rememberIconFx()
             Box(
-                Modifier.size(34.dp).clip(CircleShape).clickable(onClick = onFav),
+                Modifier.size(34.dp).clip(CircleShape).clickable {
+                    onFav()
+                    favFx.fire(null)
+                },
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
+                // the star fills up from the bottom (or drains) and squeezes once
+                LiveIcon(
                     if (s.favorite) RayIcons.StarFilled else RayIcons.Star,
+                    if (s.favorite) Yellow else c.hint.copy(alpha = 0.45f),
+                    Modifier.size(17.dp),
                     contentDescription = "Избранное",
-                    tint = if (s.favorite) Yellow else c.hint.copy(alpha = 0.45f),
-                    modifier = Modifier.size(17.dp)
+                    play = favFx.plays,
+                    motion = LocalUi.current.motion
                 )
             }
             Box(
