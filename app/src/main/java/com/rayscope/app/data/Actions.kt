@@ -8,6 +8,7 @@ import com.rayscope.app.parser.LinkParser
 import com.rayscope.app.parser.SubFetcher
 import com.rayscope.app.util.AppLog
 import com.rayscope.app.util.toast
+import com.rayscope.sub.SubFormats
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -24,31 +25,34 @@ object Actions {
     val progress = MutableStateFlow(0 to 0)
 
     suspend fun importText(raw: String) {
-        var text = raw.trim()
+        var text = raw.trim().removePrefix("\uFEFF").trim()
         if (text.isEmpty()) {
             toast("Пусто: нечего импортировать")
             return
         }
-        val lower = text.lowercase()
-        if (lower.startsWith("rayscope://") || lower.startsWith("happ://add/") || lower.startsWith("v2rayng://install-config")) {
-            val after = text.substringAfter("://")
-            text = when {
-                after.startsWith("add/", ignoreCase = true) -> after.substring(4)
-                after.contains("url=") -> LinkParser.dec(after.substringAfter("url=").substringBefore('&'))
-                else -> after
-            }.trim()
-        }
-        if (text.lowercase().startsWith("happ://")) {
-            toast("Зашифрованные happ:// ссылки не поддерживаются")
+        // happ://add/https://..., v2raytun://import/..., rayscope://add/https://..., v2rayng://install-config?url=...
+        val deep = SubFormats.deeplinkUrl(text)
+        if (deep != null) {
+            addSubscription(deep)
             return
         }
-        if (text.startsWith("http://", ignoreCase = true) || text.startsWith("https://", ignoreCase = true)) {
-            addSubscription(text.lines().first().trim())
+        // rayscope://vless://... and rayscope://add/vless://...
+        if (text.startsWith("rayscope://", ignoreCase = true)) {
+            text = text.substringAfter("://").let { if (it.startsWith("add/", ignoreCase = true)) it.substring(4) else it }.trim()
+        }
+        if (text.startsWith("happ://", ignoreCase = true)) {
+            toast("Зашифрованные ссылки happ:// не поддерживаются: скопируйте обычную ссылку на подписку")
             return
         }
-        val list = LinkParser.parseMany(text)
+        // every https:// line is a subscription, the rest are servers (links, JSON configs, base64)
+        val lines = text.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        val urls = lines.filter { SubFormats.isHttp(it) && !it.contains(' ') }
+        for (u in urls) addSubscription(u)
+        val rest = lines.filterNot { it in urls }.joinToString("\n")
+        if (rest.isEmpty()) return
+        val list = LinkParser.parseMany(rest)
         if (list.isEmpty()) {
-            toast("Не найдено ссылок vless / vmess / trojan / ss / hy2")
+            if (urls.isEmpty()) toast("Не найдено ни ссылок vless / vmess / trojan / ss / hy2, ни подписки")
             return
         }
         Repo.add(list)
@@ -58,8 +62,9 @@ object Actions {
     }
 
     suspend fun addSubscription(url: String, name: String = "") {
-        val existing = Repo.subs.value.firstOrNull { it.url == url }
-        val sub = existing ?: Subscription(name = name, url = url)
+        val u = url.trim()
+        val existing = Repo.subs.value.firstOrNull { it.url == u }
+        val sub = existing ?: Subscription(name = name, url = u)
         if (existing == null) Repo.upsertSub(sub)
         updateSub(sub, silent = false)
     }
@@ -139,6 +144,7 @@ object Actions {
     fun modeLabel(): String = when (Repo.settings.pingMode) {
         1 -> "реальная задержка"
         2 -> "только TCP"
+        3 -> "ICMP"
         else -> "реальная задержка + TCP"
     }
 
@@ -149,17 +155,27 @@ object Actions {
         val udp = s.protocol == "hysteria2"
         val tcp = when {
             udp -> Server.DELAY_UNTESTED
-            mode == 1 -> s.tcpPing
+            mode == 1 || mode == 3 -> s.tcpPing
             else -> Tester.tcpPing(s.address, s.port, st.pingTimeout)
         }
-        val (d, err) = if (mode == 2 && !udp) {
-            if (tcp >= 0) tcp to "" else -1L to "TCP: порт не отвечает"
-        } else {
-            Tester.realDelay(s)
+        // 0 a request through the core, 1 TCP handshake (Hysteria2 has no TCP port: it goes through the core), 2 ICMP
+        val kind = when {
+            mode == 3 -> 2
+            mode == 2 && !udp -> 1
+            else -> 0
+        }
+        val (d, err) = when (kind) {
+            2 -> {
+                val v = Tester.icmpPing(s.address, st.pingTimeout)
+                if (v >= 0) v to "" else -1L to "Не отвечает на ping: ICMP часто закрыт, это не значит, что сервер не работает"
+            }
+            1 -> if (tcp >= 0) tcp to "" else -1L to "TCP: порт не отвечает"
+            else -> Tester.realDelay(s)
         }
         Repo.update(id) {
             it.copy(
                 delay = d,
+                pingKind = kind,
                 tcpPing = tcp,
                 lastTested = System.currentTimeMillis(),
                 lastError = err,

@@ -51,6 +51,44 @@ object Tester {
         }
     }
 
+    /** "time=12.3 ms" in the system ping output; the summary line ("time 0ms") has no '=' and is skipped. */
+    private val PING_TIME = Regex("time[=<]\\s*([\\d.]+)\\s*ms", RegexOption.IGNORE_CASE)
+
+    /**
+     * ICMP echo to the server through the system ping, -1 if there is no reply. The name is resolved first, so
+     * DNS time is not part of the result. Our own app is outside the VPN, the echo goes straight to the server.
+     */
+    suspend fun icmpPing(host: String, timeoutMs: Int = 3000): Long = withContext(Dispatchers.IO) {
+        val t = timeoutMs.coerceIn(300, 10_000)
+        val ip = try {
+            InetAddress.getByName(host)
+        } catch (e: Exception) {
+            return@withContext -1L
+        }
+        val text = ip.hostAddress.orEmpty()
+        val bin = if (text.contains(':')) "/system/bin/ping6" else "/system/bin/ping"
+        val sec = ((t + 999) / 1000).toString()
+        val out = try {
+            val pr = ProcessBuilder(bin, "-c", "1", "-w", sec, "-W", sec, text).redirectErrorStream(true).start()
+            pr.inputStream.bufferedReader().use { it.readText() }.also { pr.waitFor() }
+        } catch (e: Exception) {
+            null
+        }
+        if (out != null) {
+            PING_TIME.find(out)?.groupValues?.get(1)?.toDoubleOrNull()?.let {
+                return@withContext Math.round(it).coerceAtLeast(1L)
+            }
+            if (out.contains("received") || out.contains("packet loss")) return@withContext -1L
+        }
+        // no ping tool, or it may not send ICMP here: Java's own echo (ICMP datagram socket, else TCP port 7)
+        try {
+            val t0 = System.nanoTime()
+            if (ip.isReachable(t)) (System.nanoTime() - t0) / 1_000_000 else -1L
+        } catch (e: Exception) {
+            -1L
+        }
+    }
+
     /**
      * Real HTTP delay through the server (full proxy handshake), using a temporary Xray instance.
      * Honors attempts / aggregate / timeout from settings.
