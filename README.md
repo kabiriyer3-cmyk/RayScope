@@ -1,11 +1,12 @@
 <p align="center">
-  <img alt="RayScope: Xray-клиент для Android и Windows" src="docs/assets/banner.svg" width="100%">
+  <img alt="RayScope: Xray-клиент для Android, Windows и Linux" src="docs/assets/banner.svg" width="100%">
 </p>
 
 <p align="center">
   <a href="https://github.com/kabiriyer3-cmyk/RayScope/releases/latest"><img alt="Последняя версия" src="https://img.shields.io/github/v/release/kabiriyer3-cmyk/RayScope?style=flat-square&label=%D0%B2%D0%B5%D1%80%D1%81%D0%B8%D1%8F&color=2b2e35"></a>
   <img alt="Android 7.0 и новее" src="https://img.shields.io/badge/Android-7.0%2B-2b2e35?style=flat-square">
   <img alt="Windows 10 и 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-2b2e35?style=flat-square">
+  <img alt="Linux x64" src="https://img.shields.io/badge/Linux-x64-2b2e35?style=flat-square">
   <a href="https://github.com/XTLS/Xray-core"><img alt="Ядро Xray" src="https://img.shields.io/badge/%D1%8F%D0%B4%D1%80%D0%BE-Xray-2b2e35?style=flat-square"></a>
 </p>
 
@@ -21,7 +22,7 @@
 
 <br>
 
-RayScope подключается к серверам VLESS, VMess, Trojan, Shadowsocks и Hysteria2 через ядро Xray. Подписки берёт те же, что Happ, v2rayNG, v2RayTun и Hiddify, включая ссылки из ботов и панелей вроде Marzban, 3x-ui и Remnawave.
+RayScope подключается к серверам VLESS, VMess, Trojan, Shadowsocks и Hysteria2, а также к обычным прокси SOCKS5 и HTTP через ядро Xray. Работает на Android, Windows и Linux. Подписки берёт те же, что Happ, v2rayNG, v2RayTun и Hiddify, включая ссылки из ботов и панелей вроде Marzban, 3x-ui и Remnawave.
 
 Основная идея: показать, что на самом деле происходит с соединением. Какие серверы живые, поменялся ли IP, открываются ли YouTube и Telegram через туннель, насколько сервер стабилен по прошлым проверкам.
 
@@ -54,9 +55,22 @@ Java и ядро уже внутри, отдельно ничего ставит
 
 Файлы не подписаны платным сертификатом, поэтому SmartScreen может показать предупреждение. Нажмите «Подробнее», затем «Выполнить в любом случае».
 
+### Linux
+
+| Файл | Что это |
+|---|---|
+| `rayscope_…_amd64.deb` | Debian, Ubuntu, Mint и всё, что на них основано |
+| `RayScope-…-linux-x64.tar.gz` | любой 64-битный дистрибутив: распаковать и запустить `./rayscope` |
+
+```sh
+sudo apt install ./rayscope_*_amd64.deb
+```
+
+Из архива программа запускается без установки, `./install.sh` добавит её в меню приложений. Java и ядра уже внутри. Системный прокси выставляется в настройках GNOME и KDE. Для режима TUN нужен `pkexec` (есть почти везде): при включении система спросит пароль администратора. Трей появляется, если окружение его поддерживает; в чистом GNOME для этого нужно расширение AppIndicator.
+
 ### Первый запуск
 
-1. Скопируйте ссылку на подписку (`https://…`) или ссылки на серверы (`vless://…`, `ss://…` и так далее).
+1. Скопируйте ссылку на подписку (`https://…`), ссылки на серверы (`vless://…`, `ss://…` и так далее) или список прокси.
 2. На вкладке «Серверы» нажмите «Вставить из буфера». Подписку можно добавить и через «+».
 3. Нажмите «Пинг», выберите сервер с зелёной задержкой и включите подключение.
 
@@ -68,6 +82,7 @@ Java и ядро уже внутри, отдельно ничего ставит
 - Остаток трафика и срок подписки, автообновление, выбор User-Agent для панелей, которые отдают разным клиентам разное.
 - Ссылки импорта из Happ, v2RayTun, Hiddify, Streisand, v2rayNG, Clash и sing-box, а также `sub://` и `rayscope://`.
 - Протоколы: VLESS (в том числе REALITY и XTLS Vision), VMess, Trojan, Shadowsocks, Hysteria2. Транспорты TCP, WebSocket, gRPC, HTTPUpgrade, XHTTP.
+- Обычные прокси SOCKS5 и HTTP(S): `socks5://логин:пароль@адрес:порт`, `http://…`, `tg://socks`, `t.me/socks` и списки из прокси-магазинов вида `адрес:порт:логин:пароль`. Строки без схемы считаются SOCKS5, для HTTP допишите `http://`.
 - Избранное, поиск, фильтры «рабочие», «нерабочие», «не проверены», сортировка по пингу, имени и стабильности.
 
 **Проверка**
@@ -80,7 +95,7 @@ Java и ядро уже внутри, отдельно ничего ставит
 
 **Подключение**
 
-- Windows: системный прокси, TUN (весь трафик компьютера, включая игры и Telegram) или только локальный прокси HTTP `127.0.0.1:10809` и SOCKS5 `127.0.0.1:10808`.
+- Windows и Linux: системный прокси, TUN (весь трафик компьютера, включая игры и Telegram) или только локальный прокси HTTP `127.0.0.1:10809` и SOCKS5 `127.0.0.1:10808`.
 - Android: раздельное туннелирование по приложениям, плитка в шторке, виджеты 2×2 и 4×1, уведомление со скоростью.
 - Российские сайты напрямую, блокировка рекламы и QUIC, свои правила «напрямую» и «блокировать».
 - TLS-фрагментация и uTLS-отпечаток, если провайдер режет соединения через DPI.
@@ -89,7 +104,7 @@ Java и ядро уже внутри, отдельно ничего ставит
 **Интерфейс**
 
 - Светлая и тёмная тема, 8 цветов акцента. На Android ещё AMOLED, размер текста, скругления и компактный список.
-- На Windows: трей, автозапуск вместе с системой, меню команд по <kbd>Ctrl</kbd>+<kbd>K</kbd>, разделы по <kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>4</kbd>.
+- На компьютере: трей, автозапуск вместе с системой, меню команд по <kbd>Ctrl</kbd>+<kbd>K</kbd>, разделы по <kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>4</kbd>.
 - Если программа закрылась или упала, системный прокси возвращается как был, интернет не пропадает.
 
 ## Частые вопросы
@@ -103,10 +118,10 @@ Java и ядро уже внутри, отдельно ничего ставит
 </details>
 
 <details>
-<summary><b>На Windows браузер работает, а игры, Telegram или голос в Discord нет</b></summary>
+<summary><b>На компьютере браузер работает, а игры, Telegram или голос в Discord нет</b></summary>
 <br>
 
-Эти программы не смотрят на системный прокси. Включите режим TUN на главной: он заворачивает в VPN весь трафик компьютера. Для TUN нужны права администратора, RayScope предложит перезапуститься с ними.
+Эти программы не смотрят на системный прокси. Включите режим TUN на главной: он заворачивает в VPN весь трафик компьютера. Для TUN нужны права администратора: на Windows RayScope предложит перезапуститься с ними, на Linux система спросит пароль.
 
 </details>
 
@@ -122,7 +137,7 @@ Java и ядро уже внутри, отдельно ничего ставит
 <summary><b>Где хранятся серверы и настройки</b></summary>
 <br>
 
-На Windows в `%APPDATA%\RayScope`, папку можно открыть из настроек. На Android внутри приложения. Перенести их на другой телефон можно через «Настройки → Резервная копия».
+На Windows в `%APPDATA%\RayScope`, на Linux в `~/.config/RayScope`, папку можно открыть из настроек. На Android внутри приложения. Перенести их на другой телефон можно через «Настройки → Резервная копия».
 
 </details>
 
@@ -130,7 +145,7 @@ Java и ядро уже внутри, отдельно ничего ставит
 <summary><b>Как обновиться</b></summary>
 <br>
 
-Скачайте новую версию из Releases и поставьте поверх. На Windows установщик сам заменит старую версию, портативную достаточно распаковать в ту же папку.
+Скачайте новую версию из Releases и поставьте поверх. На Windows установщик сам заменит старую версию, портативную достаточно распаковать в ту же папку. На Linux поставьте новый `.deb` или распакуйте архив на место старого.
 
 </details>
 
@@ -162,8 +177,9 @@ Java и ядро уже внутри, отдельно ничего ставит
 1. скачивает ядро `libv2ray.aar` из [AndroidLibXrayLite](https://github.com/2dust/AndroidLibXrayLite);
 2. собирает подписанные APK под arm64-v8a, armeabi-v7a, x86_64, x86 и universal;
 3. собирает Windows-версию (модуль `desktop`, Compose Multiplatform), лаунчер `RayScope.exe` (mingw-w64) и установщик (NSIS), кладёт рядом JRE 17, `xray.exe` и `sing-box.exe` для TUN;
-4. публикует релиз с номером `1.2.<номер сборки>` и файлом `SHA256SUMS.txt`;
-5. если сборка упала, открывает issue с выдержкой из лога.
+4. из тех же файлов собирает Linux-версию: архив и `.deb` с JRE 17, `xray` и `sing-box` (`ci/linux.sh`);
+5. публикует релиз с номером `1.2.<номер сборки>` и файлом `SHA256SUMS.txt`;
+6. если сборка упала, открывает issue с выдержкой из лога.
 
 </details>
 
@@ -174,7 +190,7 @@ Java и ядро уже внутри, отдельно ничего ставит
 Нужен JDK 17.
 
 - **Android**: положите `libv2ray.aar` в `app/libs/` и откройте проект в Android Studio. Без переменных окружения release-сборка подписывается debug-ключом.
-- **Windows**: `gradle :desktop:run`. Рядом с рабочей папкой должна лежать папка `core` с `xray.exe` и geo-файлами.
+- **Windows и Linux**: `gradle :desktop:run`. Рядом с рабочей папкой должна лежать папка `core` с `xray.exe` (на Linux `xray`) и geo-файлами.
 
 </details>
 
@@ -194,8 +210,8 @@ base64 -w0 my.p12   # это значение для KEYSTORE_BASE64
 ## Сторонние компоненты
 
 - [Xray-core](https://github.com/XTLS/Xray-core), MPL-2.0. На Android через [AndroidLibXrayLite](https://github.com/2dust/AndroidLibXrayLite).
-- [sing-box](https://github.com/SagerNet/sing-box), GPL-3.0, в Windows-сборке для режима TUN.
-- [Eclipse Temurin](https://adoptium.net) JRE, GPLv2 с Classpath Exception, в Windows-сборке.
+- [sing-box](https://github.com/SagerNet/sing-box), GPL-3.0, в сборках для Windows и Linux для режима TUN.
+- [Eclipse Temurin](https://adoptium.net) JRE, GPLv2 с Classpath Exception, в сборках для Windows и Linux.
 - Иконки нарисованы по мотивам [Lucide](https://lucide.dev), ISC.
 
 Участники проекта перечислены в [CONTRIBUTORS.md](CONTRIBUTORS.md).
