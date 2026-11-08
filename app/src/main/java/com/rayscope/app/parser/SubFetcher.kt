@@ -4,6 +4,7 @@ import android.net.Uri
 import com.rayscope.app.core.XrayConfig
 import com.rayscope.app.model.Server
 import com.rayscope.app.model.Subscription
+import com.rayscope.sub.SubFormats
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
@@ -20,12 +21,32 @@ object SubFetcher {
 
     class Result(val sub: Subscription, val servers: List<Server>)
 
+    /** The panel answered, but with nothing we can read (a web page, Clash YAML, a refusal): another client name may help. */
+    private class Unreadable(msg: String) : IOException(msg)
+
+    /**
+     * Asks with the User-Agent from the settings first. Panels pick the format by it, so when the answer is
+     * unreadable the request goes again as Happ, v2rayNG and v2rayN. Network errors are thrown at once.
+     */
     fun fetch(sub: Subscription, userAgent: String, viaProxy: Boolean): Result {
         val c = if (viaProxy) {
             client.newBuilder().proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", XrayConfig.HTTP_PORT))).build()
         } else client
-        val req = Request.Builder().url(sub.url).header("User-Agent", userAgent).header("Accept", "*/*").build()
+        var last: IOException? = null
+        for (ua in (listOf(userAgent) + SubFormats.FALLBACK_UAS).filter { it.isNotBlank() }.distinct()) {
+            try {
+                return fetchOnce(c, sub, ua)
+            } catch (e: Unreadable) {
+                last = e
+            }
+        }
+        throw last ?: IOException("В подписке нет поддерживаемых серверов")
+    }
+
+    private fun fetchOnce(c: OkHttpClient, sub: Subscription, ua: String): Result {
+        val req = Request.Builder().url(sub.url).header("User-Agent", ua).header("Accept", "*/*").build()
         c.newCall(req).execute().use { resp ->
+            if (resp.code in 400..499) throw Unreadable("HTTP ${resp.code}")
             if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
             val body = resp.body?.string().orEmpty()
             var up = 0L
@@ -48,7 +69,7 @@ object SubFetcher {
             val support = resp.header("support-url") ?: sub.supportUrl
             val announce = resp.header("announce")?.let { decodeHeader(it) } ?: sub.announce
             val servers = LinkParser.parseMany(body).map { it.copy(subId = sub.id) }
-            if (servers.isEmpty()) throw IOException("В подписке нет поддерживаемых серверов")
+            if (servers.isEmpty()) throw Unreadable("В подписке нет поддерживаемых серверов")
             val host = try { Uri.parse(sub.url).host } catch (e: Exception) { null }
             val name = when {
                 !title.isNullOrBlank() -> title

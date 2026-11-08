@@ -2,10 +2,15 @@ package com.rayscope.app.parser
 
 import android.util.Base64
 import com.rayscope.app.model.Server
+import com.rayscope.sub.ProxyEntry
+import com.rayscope.sub.SubFormats
 import org.json.JSONObject
 import java.net.URLDecoder
 
-/** Parses share links: vless://, vmess://, trojan://, ss://, hysteria2:// (hy2://). */
+/**
+ * Parses share links (vless://, vmess://, trojan://, ss://, hysteria2://) and everything subscriptions wrap them
+ * in: base64, Xray JSON configs, sing-box profiles, web pages with links inside.
+ */
 object LinkParser {
     private val SCHEMES = listOf("vless", "vmess", "trojan", "ss", "hysteria2", "hy2")
 
@@ -15,12 +20,19 @@ object LinkParser {
     }
 
     fun parseMany(text: String): List<Server> {
-        val t = text.trim()
+        val t = text.trim().removePrefix("\uFEFF").trim()
         var lines = t.lines().map { it.trim() }.filter { isLink(it) }
         if (lines.isEmpty()) {
+            // Remnawave, Marzban and friends give Happ / v2rayNG full Xray configs instead of links
+            SubFormats.parseJson(t)?.let { return it.map { e -> e.toServer() } }
             val decoded = b64(t)
-            if (decoded != null) lines = decoded.lines().map { it.trim() }.filter { isLink(it) }
+            if (decoded != null) {
+                lines = decoded.lines().map { it.trim() }.filter { isLink(it) }
+                if (lines.isEmpty()) SubFormats.parseJson(decoded)?.let { return it.map { e -> e.toServer() } }
+            }
         }
+        // a web page or a message with links somewhere inside
+        if (lines.isEmpty()) lines = SubFormats.linksIn(t)
         return lines.mapNotNull { runCatching { parse(it) }.getOrNull() }
     }
 
@@ -202,3 +214,32 @@ object LinkParser {
         )
     }
 }
+
+/** A server from a JSON subscription: share-link fields for the list, the provider's own outbound for the core. */
+fun ProxyEntry.toServer(): Server = Server(
+    name = name,
+    protocol = protocol,
+    address = address,
+    port = port,
+    uuid = uuid,
+    method = method,
+    flow = flow,
+    network = network,
+    headerType = headerType,
+    host = host,
+    path = path,
+    serviceName = serviceName,
+    mode = mode,
+    security = security,
+    sni = sni,
+    fingerprint = fingerprint,
+    alpn = alpn,
+    publicKey = publicKey,
+    shortId = shortId,
+    spiderX = spiderX,
+    insecure = insecure,
+    obfsPassword = obfsPassword,
+    extra = extra,
+    rawLink = link(),
+    outbound = outbound,
+)
