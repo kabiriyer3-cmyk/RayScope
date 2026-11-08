@@ -2,7 +2,6 @@ package com.rayscope.desktop
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,7 +18,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -66,10 +64,10 @@ fun ConfirmDialog(title: String, text: String, action: String, onConfirm: () -> 
         onDismissRequest = onDismiss,
         confirmButton = { Btn(action, onConfirm, primary = true, color = Bad) },
         dismissButton = { Btn("Отмена", onDismiss, color = p.hint) },
-        title = { Text(title, color = p.text, fontSize = 18.sp, fontWeight = FontWeight.Bold) },
-        text = { Text(text, color = p.hint, fontSize = 14.sp) },
+        title = { Text(title, color = p.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
+        text = { Text(text, color = p.hint, fontSize = 13.5.sp, lineHeight = 19.sp) },
         containerColor = p.surface,
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(10.dp),
     )
 }
 
@@ -133,14 +131,14 @@ private fun Verdict(cs: CheckState) {
         else -> Ico.Alert
     }
     Row(
-        Modifier.fillMaxWidth().card(p, 20.dp, col.copy(alpha = 0.35f)).padding(22.dp),
+        Modifier.fillMaxWidth().card(p, 20.dp, col.copy(alpha = 0.35f)).padding(18.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconTile(icon, col, 52.dp, 26.dp)
-        Spacer(Modifier.width(16.dp))
+        IconTile(icon, col, 40.dp, 20.dp)
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, color = p.text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Text(sub, color = p.hint, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(title, color = p.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            Text(sub, color = p.hint, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (cs.checkedAt > 0) Text("Проверено: " + Fmt.ago(cs.checkedAt), color = p.hint, fontSize = 12.sp)
         }
         if (cs.wasConnected && vpn != null) {
@@ -186,7 +184,7 @@ private fun IpCard(title: String, sub: String, info: IpInfo?, err: String?, dev:
             Text(err ?: "Нет данных", color = if (err != null) Bad else p.hint, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
         } else {
             Text(
-                info.ip, color = p.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, maxLines = 1,
+                info.ip, color = p.text, fontSize = 20.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, maxLines = 1,
                 overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp)
             )
             KVIf("Страна", info.country)
@@ -236,7 +234,7 @@ private fun Services(cs: CheckState, st: Status) {
         list.forEachIndexed { i, s ->
             if (i > 0) Line()
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(s.name, color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                Text(s.name, color = p.text, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
                 Box(Modifier.width(130.dp)) { DelayBadge(s.direct) }
                 Box(Modifier.width(130.dp)) {
                     if (cs.sites.isNotEmpty() && s.vpn == -2L && !connected) Text("VPN выкл", color = p.hint, fontSize = 12.sp) else DelayBadge(s.vpn)
@@ -254,8 +252,8 @@ private fun History(cs: CheckState) {
             DevTag()
             Spacer(Modifier.width(10.dp))
             Text(
-                "Очистить", color = p.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.clickable { IpCheck.state.update { it.copy(history = emptyList()) } }.hand()
+                "Очистить", color = p.hint, fontSize = 12.5.sp,
+                modifier = Modifier.clip(RoundedCornerShape(4.dp)).press { IpCheck.state.update { it.copy(history = emptyList()) } }.padding(horizontal = 4.dp, vertical = 2.dp)
             )
         }
     }) {
@@ -321,20 +319,20 @@ private fun PortRow(title: String, value: Int, onChange: (Int) -> Unit) {
 @Composable
 private fun Swatch(c: Color, name: String, selected: Boolean, onClick: () -> Unit) {
     val p = pal
-    Column(
-        Modifier.width(66.dp).clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).hand().padding(vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+    val shape = RoundedCornerShape(6.dp)
+    Row(
+        Modifier.clip(shape).border(1.dp, if (selected) p.text.copy(alpha = 0.35f) else p.stroke, shape)
+            .background(if (selected) p.hover else Color.Transparent)
+            .press(onClick = onClick).padding(start = 8.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            Modifier.size(34.dp).clip(CircleShape).background(c).border(2.dp, if (selected) p.text else Color.Transparent, CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            if (selected) {
-                Icon(Ico.Check, contentDescription = null, tint = if (c.luminance() > 0.45f) InkOn else Color.White, modifier = Modifier.size(16.dp))
-            }
+        Box(Modifier.size(12.dp).clip(CircleShape).background(c))
+        Spacer(Modifier.width(8.dp))
+        Text(name, color = if (selected) p.text else p.hint, fontSize = 12.5.sp, maxLines = 1)
+        if (selected) {
+            Spacer(Modifier.width(6.dp))
+            Icon(Ico.Check, contentDescription = null, tint = p.text, modifier = Modifier.size(12.dp))
         }
-        Spacer(Modifier.height(4.dp))
-        Text(name, color = if (selected) p.text else p.hint, fontSize = 11.sp, maxLines = 1)
     }
 }
 
@@ -351,7 +349,10 @@ fun SettingsScreen(onOpenLog: () -> Unit) {
     var customUa by remember { mutableStateOf(false) }
     var taps by remember { mutableStateOf(0) }
     var core by remember { mutableStateOf("…") }
+    var autostart by remember { mutableStateOf(false) }
+    var autostartBusy by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { core = withContext(Dispatchers.IO) { Core.version() } }
+    LaunchedEffect(Unit) { if (Autostart.available) autostart = withContext(Dispatchers.IO) { Autostart.isEnabled() } }
     LaunchedEffect(connected) { if (!connected) dirty = false }
 
     fun setCore(f: (Prefs) -> Prefs) {
@@ -364,16 +365,16 @@ fun SettingsScreen(onOpenLog: () -> Unit) {
             Modifier.widthIn(max = 860.dp).fillMaxWidth().padding(start = 32.dp, end = 32.dp, top = 28.dp, bottom = TAB_SPACE),
             verticalArrangement = Arrangement.spacedBy(22.dp)
         ) {
-            Header("Настройки", "Подключение, пинг, маршруты и внешний вид")
+            Header("Настройки", "Подключение, пинг, маршруты, запуск и внешний вид")
 
             if (dirty && connected) {
                 Row(
-                    Modifier.fillMaxWidth().card(p, 16.dp, p.accent.copy(alpha = 0.4f)).padding(14.dp),
+                    Modifier.fillMaxWidth().card(p, 16.dp, p.accent.copy(alpha = 0.4f)).padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Ico.Refresh, contentDescription = null, tint = p.accent, modifier = Modifier.size(18.dp))
+                    Icon(Ico.Refresh, contentDescription = null, tint = p.accent, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(10.dp))
-                    Text("Новые настройки применятся после переподключения", color = p.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Text("Новые настройки применятся после переподключения", color = p.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
                     Btn("Переподключить", {
                         Engine.reconnect()
                         dirty = false
@@ -383,28 +384,19 @@ fun SettingsScreen(onOpenLog: () -> Unit) {
 
             Section("Оформление") {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    Text("Тема", color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Text("Тема", color = p.text, fontSize = 13.5.sp)
                     Spacer(Modifier.height(8.dp))
                     Segmented(listOf("Как в системе", "Светлая", "Тёмная"), prefs.theme.coerceIn(0, 2), { i -> Store.setPrefs { it.copy(theme = i) } })
                 }
                 Line()
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    Text("Акцент", color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Text("Акцент", color = p.text, fontSize = 13.5.sp)
                     Spacer(Modifier.height(8.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         ACCENT_NAMES.forEachIndexed { i, n ->
                             Swatch(accentColor(i, p.dark), n, prefs.accent == i) { Store.setPrefs { it.copy(accent = i) } }
                         }
                     }
-                }
-                Line()
-                ChoiceRow(
-                    "Liquid Glass", listOf("Выкл", "Мягкое", "Сильное"), prefs.glass.coerceIn(0, 2),
-                    "Стекло нижней панели и кнопки подключения: мягкое с размытием, сильное прозрачнее и с линзой"
-                ) { i -> Store.setPrefs { it.copy(glass = i) } }
-                Line()
-                SwitchRow("Подписи вкладок", "Название активной вкладки в нижней панели", prefs.tabLabels) { v ->
-                    Store.setPrefs { it.copy(tabLabels = v) }
                 }
                 Line()
                 SwitchRow("Компактный список серверов", "Больше серверов на экране", prefs.compact) { v -> Store.setPrefs { it.copy(compact = v) } }
@@ -584,13 +576,33 @@ fun SettingsScreen(onOpenLog: () -> Unit) {
                 }
             }
 
-            Section("Приложение") {
+            Section("Приложение", footer = "Ctrl K открывает меню команд, Ctrl 1–4 переключают разделы.") {
+                if (Autostart.available) {
+                    SwitchRow("Запускать вместе с Windows", "Свёрнутым в трей, без окна", autostart, enabled = !autostartBusy) { v ->
+                        autostartBusy = true
+                        Actions.go {
+                            val ok = withContext(Dispatchers.IO) { Autostart.set(v) }
+                            autostart = withContext(Dispatchers.IO) { Autostart.isEnabled() }
+                            autostartBusy = false
+                            if (!ok) Notice.show("Не удалось изменить автозапуск")
+                        }
+                    }
+                    Line()
+                }
+                SwitchRow("Запускать свёрнутым в трей", "Окно не открывается, иконка появляется в трее", prefs.startHidden) { v ->
+                    Store.setPrefs { it.copy(startHidden = v) }
+                }
+                Line()
                 SwitchRow("Подключаться при запуске", "К последнему выбранному серверу", prefs.connectOnLaunch) { v ->
                     Store.setPrefs { it.copy(connectOnLaunch = v) }
                 }
                 Line()
                 SwitchRow("Сворачивать в трей", "Крестик прячет окно, VPN продолжает работать", prefs.closeToTray) { v ->
                     Store.setPrefs { it.copy(closeToTray = v) }
+                }
+                Line()
+                ChoiceRow("Открывать при запуске", listOf("Главная", "Серверы", "Проверка"), prefs.startPage.coerceIn(0, 2)) { i ->
+                    Store.setPrefs { it.copy(startPage = i) }
                 }
             }
 
@@ -647,7 +659,7 @@ fun LogScreen(onBack: () -> Unit) {
     LaunchedEffect(lines.size) {
         if (lines.isNotEmpty()) list.scrollToItem(lines.size - 1)
     }
-    Column(Modifier.fillMaxSize().padding(start = 32.dp, end = 32.dp, top = 28.dp, bottom = 96.dp)) {
+    Column(Modifier.fillMaxSize().padding(start = 32.dp, end = 32.dp, top = 28.dp, bottom = TAB_SPACE)) {
         Header("Журнал", "Строк: " + lines.size + " · ядро и события программы") {
             Btn("Назад", onBack, icon = Ico.Back, color = p.hint)
             Spacer(Modifier.width(8.dp))
