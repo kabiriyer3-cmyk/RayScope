@@ -32,8 +32,12 @@ data class Server(
     val obfsPassword: String = "",
     val extra: String = "",
     val rawLink: String = "",
+    /** Xray outbound from a JSON subscription, sent to the core as is; empty for servers from share links */
+    val outbound: String = "",
     val subId: String = "",
     val delay: Long = DELAY_UNTESTED,
+    /** how [delay] was measured: 0 a request through the core, 1 TCP handshake, 2 ICMP */
+    val pingKind: Int = 0,
     val tcpPing: Long = DELAY_UNTESTED,
     val lastTested: Long = 0,
     val lastError: String = "",
@@ -125,8 +129,10 @@ data class Server(
         o.put("obfsPassword", obfsPassword)
         o.put("extra", extra)
         o.put("rawLink", rawLink)
+        o.put("outbound", outbound)
         o.put("subId", subId)
         o.put("delay", delay)
+        o.put("pingKind", pingKind)
         o.put("tcpPing", tcpPing)
         o.put("lastTested", lastTested)
         o.put("lastError", lastError)
@@ -166,8 +172,10 @@ data class Server(
             obfsPassword = o.optString("obfsPassword"),
             extra = o.optString("extra"),
             rawLink = o.optString("rawLink"),
+            outbound = o.optString("outbound"),
             subId = o.optString("subId"),
             delay = o.optLong("delay", DELAY_UNTESTED),
+            pingKind = o.optInt("pingKind", 0),
             tcpPing = o.optLong("tcpPing", DELAY_UNTESTED),
             lastTested = o.optLong("lastTested", 0L),
             lastError = o.optString("lastError"),
