@@ -1,30 +1,16 @@
-<!-- RayScope lettermark: P-shaped body with a round counter and the gradient ray, centred in the safe zone. -->
+<!-- RayScope lettermark: one continuous line drawn as an R, white, centred in the adaptive-icon safe zone. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <group
-        android:scaleX="0.6"
-        android:scaleY="0.6"
-        android:translateX="23.4"
-        android:translateY="24">
+        android:scaleX="0.62"
+        android:scaleY="0.62"
+        android:translateX="23"
+        android:translateY="23">
         <path
-            android:fillColor="#F4F6FF"
-            android:fillType="evenOdd"
-            android:pathData="M16,12H50A26,26 0,0 1,50 64H40V88H16Z M50,28.5A9.5,9.5 0,1 1,50 47.5A9.5,9.5 0,1 1,50 28.5Z" />
-        <path android:pathData="M46,69H68L86,88H63Z">
-            <aapt:attr name="android:fillColor">
-                <gradient
-                    android:type="linear"
-                    android:startX="46"
-                    android:startY="69"
-                    android:endX="86"
-                    android:endY="88"
-                    android:startColor="#9AA6FF"
-                    android:endColor="#4FD6FF" />
-            </aapt:attr>
-        </path>
+            android:fillColor="#F4F5F7"
+            android:pathData="M31.89 79L40 33C40.49 30.24 43.12 28 45.89 28L63.39 28C66.42 28 68.45 30.46 67.92 33.5C67.38 36.54 64.48 39 61.45 39C55.53 39 49.52 42.26 45.82 47.49C42.12 52.71 41.34 59.04 43.78 63.95L53.23 82.91C54.83 86.12 59.03 86.97 62.62 84.8C66.2 82.64 67.82 78.29 66.22 75.09L59.69 61.97C58.84 60.27 58.94 58.12 59.97 56.18C60.99 54.24 62.82 52.74 64.89 52.13C74.61 49.28 81.97 40.12 82.21 30.59C82.45 21.05 75.5 14 65.85 14L48.35 14C37.86 14 27.86 22.51 26 33L17.89 79C17.21 82.87 19.79 86 23.66 86C27.53 86 31.21 82.87 31.89 79Z" />
     </group>
 </vector>
