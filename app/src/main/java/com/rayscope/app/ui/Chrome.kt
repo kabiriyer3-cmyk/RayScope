@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsTopHeight
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,6 +37,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rayscope.fluid.LiveIcon
+import com.rayscope.fluid.rememberIconFx
 
 /** Top offset for page content: status bar + top bar. */
 @Composable
@@ -119,11 +120,18 @@ fun ActionIcon(
     onClick: () -> Unit,
 ) {
     val c = ray
+    val fx = rememberIconFx()
     Box(
-        modifier.size(40.dp).clip(c.shape(16.dp)).bounceClick(enabled = enabled, onClick = onClick),
+        modifier.size(40.dp).clip(c.shape(16.dp)).bounceClick(enabled = enabled) {
+            onClick()
+            fx.fire(icon)
+        },
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, contentDescription = desc, tint = if (enabled) tint else tint.copy(alpha = 0.35f), modifier = iconModifier.size(20.dp))
+        LiveIcon(
+            icon, if (enabled) tint else tint.copy(alpha = 0.35f), iconModifier.size(20.dp), contentDescription = desc,
+            play = fx.plays, done = fx.done, doneTint = Good, motion = LocalUi.current.motion
+        )
     }
 }
 

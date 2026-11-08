@@ -69,10 +69,14 @@ import com.rayscope.fluid.Fluid
 import com.rayscope.fluid.FluidSlider
 import com.rayscope.fluid.Glyphs
 import com.rayscope.fluid.GooeyToggle
+import com.rayscope.fluid.LiveIcon
+import com.rayscope.fluid.LocalIconHover
 import com.rayscope.fluid.LogoMark
 import com.rayscope.fluid.MinusGlyph
 import com.rayscope.fluid.RayLogo
 import com.rayscope.fluid.fluidSpan
+import com.rayscope.fluid.playOnRise
+import com.rayscope.fluid.rememberIconFx
 import kotlin.math.roundToInt
 
 // ------------------------------------------------------------------ palette: graphite, one flat accent (same as Android)
@@ -473,14 +477,23 @@ fun IconTile(icon: ImageVector, tint: Color, size: Dp = 34.dp, iconSize: Dp = 18
     }
 }
 
-/** Tinted square badge for stat cards and action tiles. */
+/** Tinted square badge for stat cards and action tiles. The glyph moves with the row: hover, click, busy. */
 @Composable
-fun IconBadge(icon: ImageVector, tint: Color, modifier: Modifier = Modifier, box: Dp = 32.dp, rotation: State<Float>? = null) {
+fun IconBadge(
+    icon: ImageVector,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    box: Dp = 32.dp,
+    rotation: State<Float>? = null,
+    hover: Boolean = false,
+    play: Int = 0,
+    busy: Boolean = false,
+) {
     val shape = RoundedCornerShape(box * 0.32f)
     Box(modifier.size(box).clip(shape).background(tint.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
-        Icon(
-            icon, contentDescription = null, tint = tint,
-            modifier = Modifier.size(box * 0.56f).graphicsLayer { rotationZ = rotation?.value ?: 0f }
+        LiveIcon(
+            icon, tint, Modifier.size(box * 0.56f).graphicsLayer { rotationZ = rotation?.value ?: 0f },
+            hover = hover, play = play, busy = busy
         )
     }
 }
@@ -514,10 +527,12 @@ fun Btn(
     icon: ImageVector? = null,
     enabled: Boolean = true,
     iconRotation: State<Float>? = null,
+    busy: Boolean = false,
 ) {
     val p = pal
     val src = remember { MutableInteractionSource() }
     val hovered by src.collectIsHoveredAsState()
+    val fx = rememberIconFx()
     val solid = primary && color != Color.Unspecified && color != p.accent
     val ghost = !primary && color == p.hint
     val danger = !primary && color == Bad
@@ -539,15 +554,19 @@ fun Btn(
     if (primary && hovered && enabled) m = m.background(Color.White.copy(alpha = 0.1f))
     Row(
         m.hoverable(src, enabled)
-            .clickable(interactionSource = src, indication = null, enabled = enabled, onClick = onClick).hand()
+            .clickable(interactionSource = src, indication = null, enabled = enabled) {
+                onClick()
+                fx.fire(icon)
+            }.hand()
             .padding(horizontal = 15.dp, vertical = 7.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) {
-            Icon(
-                icon, contentDescription = null, tint = if (primary || danger) fg else p.hint,
-                modifier = Modifier.size(16.dp).graphicsLayer { rotationZ = iconRotation?.value ?: 0f }
+            LiveIcon(
+                icon, if (primary || danger) fg else p.hint,
+                Modifier.size(16.dp).graphicsLayer { rotationZ = iconRotation?.value ?: 0f },
+                hover = hovered && enabled, play = fx.plays, busy = busy, done = fx.done, doneTint = if (primary) fg else Good
             )
             Spacer(Modifier.width(8.dp))
         }
@@ -555,16 +574,33 @@ fun Btn(
     }
 }
 
+/**
+ * Round icon button. The glyph answers the pointer: its hover pose or a short motion, the motion again on click,
+ * a loop while [busy]; copy turns into a green check for a moment after the click.
+ */
 @Composable
-fun IconBtn(icon: ImageVector, desc: String, onClick: () -> Unit, tint: Color = Color.Unspecified, enabled: Boolean = true, size: Dp = 32.dp) {
+fun IconBtn(
+    icon: ImageVector,
+    desc: String,
+    onClick: () -> Unit,
+    tint: Color = Color.Unspecified,
+    enabled: Boolean = true,
+    size: Dp = 32.dp,
+    busy: Boolean = false,
+) {
     val src = remember { MutableInteractionSource() }
+    val hovered by src.collectIsHoveredAsState()
+    val fx = rememberIconFx()
     Box(
-        Modifier.size(size).squish(src, enabled, 0.88f).alpha(if (enabled) 1f else 0.4f).clip(CircleShape).pressWith(src, enabled, onClick),
+        Modifier.size(size).squish(src, enabled, 0.88f).alpha(if (enabled) 1f else 0.4f).clip(CircleShape).pressWith(src, enabled) {
+            onClick()
+            fx.fire(icon)
+        },
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            icon, contentDescription = desc, tint = if (tint == Color.Unspecified) pal.hint else tint,
-            modifier = Modifier.size((size * 0.56f).coerceIn(14.dp, 22.dp))
+        LiveIcon(
+            icon, if (tint == Color.Unspecified) pal.hint else tint, Modifier.size((size * 0.56f).coerceIn(14.dp, 22.dp)),
+            contentDescription = desc, hover = hovered && enabled, play = fx.plays, busy = busy, done = fx.done, doneTint = Good
         )
     }
 }
@@ -578,13 +614,15 @@ fun RChip(text: String, selected: Boolean, count: Int? = null, icon: ImageVector
     val line by animateColorAsState(if (selected) p.accent.copy(alpha = 0.5f) else p.stroke, Fluid.soft(), label = "chipLine")
     val shape = RoundedCornerShape(50)
     val src = remember { MutableInteractionSource() }
+    val hovered by src.collectIsHoveredAsState()
+    val picked = playOnRise(selected)
     Row(
         Modifier.squish(src).height(30.dp).clip(shape).background(bg).border(1.dp, line, shape)
             .pressWith(src, onClick = onClick).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) {
-            Icon(icon, contentDescription = null, tint = if (selected) p.accent else Yellow, modifier = Modifier.size(14.dp))
+            LiveIcon(icon, if (selected) p.accent else Yellow, Modifier.size(14.dp), hover = hovered, play = picked)
             Spacer(Modifier.width(6.dp))
         }
         Text(text, color = if (selected) p.text else p.hint, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
@@ -672,7 +710,7 @@ fun Field(
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (leading != null) {
-            Icon(leading, contentDescription = null, tint = if (focused) p.accent else p.hint, modifier = Modifier.size(16.dp))
+            LiveIcon(leading, if (focused) p.accent else p.hint, Modifier.size(16.dp), hover = focused)
             Spacer(Modifier.width(9.dp))
         }
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
@@ -697,15 +735,20 @@ fun Field(
 @Composable
 fun SettingRow(title: String, subtitle: String? = null, enabled: Boolean = true, onClick: (() -> Unit)? = null, trailing: @Composable RowScope.() -> Unit = {}) {
     val p = pal
+    val src = remember { MutableInteractionSource() }
+    val hovered by src.collectIsHoveredAsState()
     var m: Modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).alpha(if (enabled) 1f else 0.45f)
-    if (onClick != null && enabled) m = m.press(onClick = onClick)
+    if (onClick != null && enabled) m = m.pressWith(src, onClick = onClick)
     Row(m.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(title, color = p.text, fontSize = 13.5.sp)
             if (subtitle != null) Text(subtitle, color = p.hint, fontSize = 12.sp, lineHeight = 16.sp)
         }
         Spacer(Modifier.width(12.dp))
-        trailing()
+        // chevrons and folders in the slot nudge when the row is hovered
+        CompositionLocalProvider(LocalIconHover provides (hovered && onClick != null && enabled)) {
+            trailing()
+        }
     }
 }
 

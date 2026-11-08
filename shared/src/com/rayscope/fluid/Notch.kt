@@ -39,7 +39,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -223,6 +222,7 @@ fun ConnectTile(
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
     val hovered by src.collectIsHoveredAsState()
+    val fx = rememberIconFx()
     val k by animateFloatAsState(if (pressed && enabled) 0.93f else 1f, Fluid.jelly(), label = "tileSquash")
     var pulse = 0f
     if (busy && motion) {
@@ -246,12 +246,15 @@ fun ConnectTile(
             .clip(shape)
             .background(fill)
             .hoverable(src, enabled)
-            .clickable(interactionSource = src, indication = null, enabled = enabled, onClick = onClick)
+            .clickable(interactionSource = src, indication = null, enabled = enabled) {
+                onClick()
+                fx.fire(icon)
+            }
             .pointerHoverIcon(PointerIcon.Hand),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, contentDescription = label, tint = ink, modifier = Modifier.size(radius * 1.45f))
+            LiveIcon(icon, ink, Modifier.size(radius * 1.45f), contentDescription = label, play = fx.plays, motion = motion)
             Spacer(Modifier.height(6.dp))
             Text(label, color = ink, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp, maxLines = 1)
         }
@@ -310,6 +313,8 @@ fun PillTabs(
     height: Dp = 52.dp,
     dotIndex: Int = -1,
     dot: Color = Color.Unspecified,
+    busy: Set<Int> = emptySet(),
+    motion: Boolean = true,
 ) {
     Row(
         modifier.fillMaxWidth().height(height).clip(RoundedCornerShape(50)).background(track).padding(4.dp),
@@ -321,6 +326,9 @@ fun PillTabs(
             val bg by animateColorAsState(if (sel) pill else pill.copy(alpha = 0f), tween(220), label = "tabFill")
             val fg by animateColorAsState(if (sel) onPill else ink, tween(220), label = "tabInk")
             val src = remember { MutableInteractionSource() }
+            val hovered by src.collectIsHoveredAsState()
+            // the icon plays its motion when its tab gets picked, by click, keyboard or from another screen
+            val picked = playOnRise(sel)
             Row(
                 Modifier.weight(w.coerceAtLeast(0.4f)).fillMaxHeight().clip(RoundedCornerShape(50)).background(bg)
                     .clickable(interactionSource = src, indication = null) { onSelect(i) }
@@ -329,7 +337,10 @@ fun PillTabs(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box {
-                    Icon(item.first, contentDescription = item.second, tint = fg, modifier = Modifier.size(20.dp))
+                    LiveIcon(
+                        item.first, fg, Modifier.size(20.dp), contentDescription = item.second,
+                        hover = hovered, play = picked, busy = i in busy, motion = motion
+                    )
                     if (i == dotIndex && dot != Color.Unspecified) {
                         Box(Modifier.align(Alignment.TopEnd).offset(x = 3.dp, y = (-2).dp).size(7.dp).clip(CircleShape).background(dot))
                     }

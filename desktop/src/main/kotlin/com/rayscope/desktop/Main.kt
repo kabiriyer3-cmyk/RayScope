@@ -67,6 +67,7 @@ import androidx.compose.ui.window.isTraySupported
 import androidx.compose.ui.window.rememberWindowState
 import com.rayscope.fluid.ConnectTile
 import com.rayscope.fluid.Fluid
+import com.rayscope.fluid.LiveIcon
 import com.rayscope.fluid.NotchFrame
 import com.rayscope.fluid.NotchSpec
 import com.rayscope.fluid.PillTabs
@@ -338,6 +339,8 @@ fun App(
         }
         val connected = st.state == ConnState.CONNECTED
         val busy = st.state == ConnState.CONNECTING || st.state == ConnState.STOPPING
+        val testing by Actions.testing.collectAsState()
+        val checking = IpCheck.state.collectAsState().value.running
         // once per session: look up the exit IP for the header (runs in the app scope, not in a screen)
         LaunchedEffect(connected, st.since) {
             if (connected && IpCheck.state.value.checkedAt < st.since) {
@@ -426,6 +429,11 @@ fun App(
                         modifier = Modifier.padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 10.dp),
                         dotIndex = 0,
                         dot = if (connected && tab != 0) Good else Color.Unspecified,
+                        // servers blink while a ping runs, the radar sweeps while the IP check runs
+                        busy = buildSet {
+                            if (testing) add(1)
+                            if (checking) add(2)
+                        },
                     )
                 }
             )
@@ -722,7 +730,7 @@ private fun CommandRow(c: Command, selected: Boolean, onHover: () -> Unit, onCli
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
-            Icon(c.icon, contentDescription = null, tint = ic, modifier = Modifier.size(18.dp))
+            LiveIcon(c.icon, ic, Modifier.size(18.dp), hover = selected)
         }
         Spacer(Modifier.width(12.dp))
         Text(c.title, color = fg, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))

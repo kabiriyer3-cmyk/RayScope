@@ -62,6 +62,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rayscope.app.data.Repo
 import com.rayscope.app.data.UiPrefs
+import com.rayscope.fluid.LiveIcon
+import com.rayscope.fluid.rememberIconFx
 import kotlin.math.roundToInt
 
 // ------------------------------------------------------------------ palette: neutral greys, one accent
@@ -686,12 +688,19 @@ fun Chip(
 fun MiniAction(icon: ImageVector, text: String, color: Color, onClick: () -> Unit) {
     val c = ray
     val shape = c.shape(14.dp)
+    val fx = rememberIconFx()
     Row(
-        Modifier.bounceClick(onClick = onClick).clip(shape).border(1.dp, c.stroke, shape)
+        Modifier.bounceClick {
+            onClick()
+            fx.fire(icon)
+        }.clip(shape).border(1.dp, c.stroke, shape)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = null, tint = if (color == Bad) Bad else c.hint, modifier = Modifier.size(14.dp))
+        LiveIcon(
+            icon, if (color == Bad) Bad else c.hint, Modifier.size(14.dp),
+            play = fx.plays, done = fx.done, doneTint = Good, motion = LocalUi.current.motion
+        )
         Spacer(Modifier.width(6.dp))
         Text(text, color = if (color == Bad) Bad else c.text, fontSize = 13.sp, maxLines = 1)
     }
@@ -717,8 +726,12 @@ fun PillButton(
         else -> c.text
     }
     val shape = c.shape(16.dp)
+    val fx = rememberIconFx()
     var m = modifier
-        .bounceClick(enabled = enabled, onClick = onClick)
+        .bounceClick(enabled = enabled) {
+            onClick()
+            fx.fire(icon)
+        }
         .alpha(if (enabled) 1f else 0.45f)
         .clip(shape)
     m = if (primary) m.background(fill) else m.background(c.raised).border(1.dp, c.stroke, shape)
@@ -728,7 +741,10 @@ fun PillButton(
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) {
-            Icon(icon, contentDescription = null, tint = if (primary || color == Bad) fg else c.hint, modifier = iconModifier.size(16.dp))
+            LiveIcon(
+                icon, if (primary || color == Bad) fg else c.hint, iconModifier.size(16.dp),
+                play = fx.plays, done = fx.done, doneTint = if (primary) fg else Good, motion = LocalUi.current.motion
+            )
             Spacer(Modifier.width(8.dp))
         }
         Text(text, color = fg, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)

@@ -23,6 +23,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rayscope.fluid.LiveIcon
+import com.rayscope.fluid.RowIcon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
@@ -89,8 +91,7 @@ fun CheckScreen() {
         Header("Проверка", "Виден ли настоящий IP") {
             Btn(
                 if (cs.running) "Проверяю…" else "Проверить", { Actions.go { IpCheck.run() } },
-                primary = true, icon = Ico.Refresh, enabled = !cs.running,
-                iconRotation = if (cs.running) spin() else null
+                primary = true, icon = Ico.Refresh, enabled = !cs.running, busy = cs.running
             )
         }
         Verdict(cs)
@@ -218,7 +219,7 @@ private fun Services(cs: CheckState, st: Status) {
         trailing = {
             Btn(
                 if (cs.sitesRunning) "Проверяю…" else "Проверить", { Actions.go { IpCheck.runSites() } },
-                enabled = !cs.sitesRunning, icon = Ico.Globe
+                enabled = !cs.sitesRunning, icon = Ico.Globe, busy = cs.sitesRunning
             )
         }
     ) {
@@ -329,7 +330,7 @@ private fun Swatch(c: Color, name: String, selected: Boolean, onClick: () -> Uni
         Text(name, color = if (selected) p.text else p.hint, fontSize = 12.5.sp, maxLines = 1)
         if (selected) {
             Spacer(Modifier.width(6.dp))
-            Icon(Ico.Check, contentDescription = null, tint = p.text, modifier = Modifier.size(12.dp))
+            LiveIcon(Ico.Check, p.text, Modifier.size(12.dp), appear = true)
         }
     }
 }
@@ -641,14 +642,14 @@ fun SettingsScreen(onOpenLog: () -> Unit) {
                 }
                 Line()
                 SettingRow("Папка с данными", Paths.data.absolutePath, onClick = { openFolder(Paths.data) }) {
-                    Icon(Ico.Folder, contentDescription = null, tint = p.hint, modifier = Modifier.size(18.dp))
+                    RowIcon(Ico.Folder, p.hint, Modifier.size(18.dp))
                 }
                 if (prefs.dev) {
                     Line()
                     SettingRow("Журнал", "Ядро и события программы", onClick = onOpenLog) {
                         DevTag()
                         Spacer(Modifier.width(8.dp))
-                        Icon(Ico.Chevron, contentDescription = null, tint = p.hint, modifier = Modifier.size(18.dp))
+                        RowIcon(Ico.Chevron, p.hint, Modifier.size(18.dp))
                     }
                     Line()
                     SwitchRow("Режим разработчика", "Журнал, TCP-пинг, сырые параметры серверов", true) { v ->
