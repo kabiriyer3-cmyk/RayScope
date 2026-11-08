@@ -46,6 +46,7 @@ fun ServersScreen() {
     val testing by Actions.testing.collectAsState()
     val updating by Actions.updating.collectAsState()
     val prog by Actions.progress.collectAsState()
+    val runKind by Actions.running.collectAsState()
 
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(0) }
@@ -94,7 +95,8 @@ fun ServersScreen() {
                 IconBtn(Ico.Plus, "Добавить подписку", { addSub = true })
                 Spacer(Modifier.width(4.dp))
                 Btn(
-                    "Пинг", { Actions.go { Actions.testAll() } }, primary = true, icon = Ico.Bolt,
+                    if (prefs.pingMode == 0) "Пинг" else "Пинг " + Tester.KINDS[prefs.pingMode.coerceIn(0, 2)],
+                    { Actions.go { Actions.pingAll() } }, primary = true, icon = Ico.Bolt,
                     enabled = !testing && servers.isNotEmpty(), busy = testing
                 )
                 Box {
@@ -113,11 +115,17 @@ fun ServersScreen() {
                             menu = false
                             confirmDead = true
                         }
-                        if (prefs.dev) {
-                            MenuItem("TCP-пинг всех", Ico.Activity, dev = true) {
+                        Line()
+                        Caps("Способ пинга", Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 4.dp))
+                        Tester.KIND_NAMES.forEachIndexed { i, n ->
+                            CheckItem(n, i == prefs.pingMode) {
                                 menu = false
-                                Actions.go { Actions.tcpAll() }
+                                Store.setPrefs { it.copy(pingMode = i) }
+                                Actions.go { Actions.pingAll(i) }
                             }
+                        }
+                        if (prefs.dev) {
+                            Line()
                             MenuItem("Сбросить результаты", Ico.Close, dev = true) {
                                 menu = false
                                 Store.resetTests()
@@ -130,7 +138,8 @@ fun ServersScreen() {
             if (testing) {
                 SlimProgress(if (prog.second > 0) prog.first.toFloat() / prog.second else 0f)
                 Text(
-                    "Проверяю " + prog.first + " из " + prog.second, color = p.hint, fontSize = 12.sp, style = TNum,
+                    "Проверяю " + prog.first + " из " + prog.second + " · " + Tester.KINDS[runKind.coerceIn(0, 2)],
+                    color = p.hint, fontSize = 12.sp, style = TNum,
                     modifier = Modifier.padding(top = 6.dp, bottom = 12.dp)
                 )
             }
@@ -311,6 +320,8 @@ private fun ServerRow(
                     if (dev && s.tcpPing >= 0) add("tcp " + s.tcpPing)
                     val stab = s.stability()
                     if (stab >= 0) add("$stab%")
+                    // TCP and ICMP numbers don't compare with the real latency: say which one this is
+                    if (s.pingKind != 0 && s.delay >= 0) add("пинг " + Tester.KINDS[s.pingKind.coerceIn(0, 2)])
                 }.joinToString(" · ")
                 Text(meta, color = p.hint, fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, style = TNum)
                 if (dev && s.isDead && s.lastError.isNotEmpty()) {
@@ -488,8 +499,11 @@ private fun DetailPanel(s: Server, subs: List<Subscription>, dev: Boolean, st: S
             )
         }
         Section("Задержка") {
-            KV("Через ядро", Fmt.ms(s.delay), delayColor(s.delay))
-            if (dev) KV("TCP", Fmt.ms(s.tcpPing), delayColor(s.tcpPing))
+            KV(
+                if (s.pingKind == 0) "Через ядро" else Tester.KIND_NAMES[s.pingKind.coerceIn(0, 2)],
+                Fmt.ms(s.delay), delayColor(s.delay)
+            )
+            if (dev && s.pingKind != 1) KV("TCP", Fmt.ms(s.tcpPing), delayColor(s.tcpPing))
             val stab = s.stability()
             KV("Стабильность", if (stab < 0) "" else "$stab% (" + s.successCount + " из " + (s.successCount + s.failCount) + ")")
             KV("Проверен", Fmt.ago(s.lastTested))
@@ -504,6 +518,7 @@ private fun DetailPanel(s: Server, subs: List<Subscription>, dev: Boolean, st: S
             KV("Защита", s.securityLabel(), if (sec == "tls" || sec == "reality") Good else Mid)
             KVIf("SNI", s.sni, mono = true)
             KV("Источник", source)
+            if (s.outbound.isNotEmpty()) KV("Конфиг", "Xray JSON, как в подписке")
         }
         if (dev) {
             Section("Подробно", trailing = { DevTag() }) {
