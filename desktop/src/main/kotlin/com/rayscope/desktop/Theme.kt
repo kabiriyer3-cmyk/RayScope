@@ -6,12 +6,14 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -39,11 +41,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
@@ -60,27 +64,24 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlin.math.PI
-import kotlin.math.cos
 import kotlin.math.roundToInt
-import kotlin.math.sin
 
-// ------------------------------------------------------------------ palette (same "Scope" look as Android)
+// ------------------------------------------------------------------ palette: neutral greys, one accent (same as Android)
 
-val Good = Color(0xFF3DDC97)
-val Mid = Color(0xFFFFB547)
-val Bad = Color(0xFFFF5C6C)
-val Idle = Color(0xFF7D8590)
-val Orange = Color(0xFFFF8A3D)
-val Blue = Color(0xFF4C8DFF)
-val Purple = Color(0xFFA78BFA)
-val Indigo = Color(0xFF7C83FF)
-val Teal = Color(0xFF2DD4BF)
-val Pink = Color(0xFFFF6B9A)
-val Gray = Color(0xFF8B949E)
-val Yellow = Color(0xFFFFD43B)
-val Cyan = Color(0xFF38E1FF)
-val InkOn = Color(0xFF051116)
+val Good = Color(0xFF4CB782)
+val Mid = Color(0xFFE2A93B)
+val Bad = Color(0xFFEB5757)
+val Idle = Color(0xFF6E7380)
+val Orange = Color(0xFFEF8A47)
+val Blue = Color(0xFF4E8EF7)
+val Purple = Color(0xFF9C88F0)
+val Indigo = Color(0xFF7C84FF)
+val Teal = Color(0xFF3FB8A9)
+val Pink = Color(0xFFE8688F)
+val Gray = Color(0xFF8B8D98)
+val Yellow = Color(0xFFE8C547)
+val Cyan = Color(0xFF4FB7E0)
+val InkOn = Color(0xFF0D0E10)
 
 val TNum = TextStyle(fontFeatureSettings = "tnum")
 
@@ -97,21 +98,18 @@ data class Pal(
     val faint: Color,
     val accent: Color,
     val onAccent: Color,
-    /** Liquid Glass level: 0 off, 1 soft, 2 strong */
-    val glass: Int = 1,
-    val glassFill: Color = Color.Unspecified,
-    val glassFallback: Color = Color.Unspecified,
-    val rim: Color = Color.Unspecified,
+    /** row highlight under the mouse */
+    val hover: Color,
 )
 
-val ACCENT_NAMES = listOf("Циан", "Мята", "Лайм", "Синий", "Фиалка", "Розовый", "Янтарь", "Коралл")
+val ACCENT_NAMES = listOf("Индиго", "Синий", "Графит", "Зелёный", "Янтарь", "Красный", "Фиалка", "Бирюза")
 private val ACCENTS_DARK = listOf(
-    Color(0xFF38E1FF), Color(0xFF3DDC97), Color(0xFFC6F432), Color(0xFF5B9BFF),
-    Color(0xFFA78BFA), Color(0xFFFF6B9A), Color(0xFFFFB547), Color(0xFFFF7A59)
+    Color(0xFF7C84FF), Color(0xFF4E8EF7), Color(0xFFE6E6E9), Color(0xFF4CB782),
+    Color(0xFFE2A93B), Color(0xFFEB5757), Color(0xFFA48CF2), Color(0xFF3FB8A9)
 )
 private val ACCENTS_LIGHT = listOf(
-    Color(0xFF0091BA), Color(0xFF0E9F6E), Color(0xFF5E8C00), Color(0xFF2563EB),
-    Color(0xFF7C3AED), Color(0xFFDB2777), Color(0xFFC27803), Color(0xFFE0482A)
+    Color(0xFF5864D8), Color(0xFF2F6FE0), Color(0xFF1A1B1F), Color(0xFF1F8A5B),
+    Color(0xFFB07A10), Color(0xFFD13B3B), Color(0xFF7457D6), Color(0xFF168A7E)
 )
 
 fun accentColor(i: Int, dark: Boolean): Color {
@@ -119,24 +117,22 @@ fun accentColor(i: Int, dark: Boolean): Color {
     return l.getOrElse(i) { l[0] }
 }
 
-fun palette(dark: Boolean, accentIndex: Int, glass: Int = 1): Pal {
+fun palette(dark: Boolean, accentIndex: Int): Pal {
     val a = accentColor(accentIndex, dark)
     val on = if (a.luminance() > 0.45f) InkOn else Color.White
     return if (dark) {
         Pal(
-            dark = true, bg = Color(0xFF0A0C10), side = Color(0xFF0E1015), surface = Color(0xFF13161C),
-            raised = Color(0xFF1C2028), stroke = Color.White.copy(alpha = 0.07f), text = Color(0xFFF1F3F7),
-            hint = Color(0xFF8A93A2), faint = Color.White.copy(alpha = 0.10f), accent = a, onAccent = on,
-            glass = glass.coerceIn(0, 2), glassFill = Color(0xFF14171D).copy(alpha = 0.58f),
-            glassFallback = Color(0xF2171A21), rim = Color.White.copy(alpha = 0.42f)
+            dark = true, bg = Color(0xFF0D0E10), side = Color(0xFF111215), surface = Color(0xFF141518),
+            raised = Color(0xFF1C1D21), stroke = Color.White.copy(alpha = 0.075f), text = Color(0xFFEDEEF0),
+            hint = Color(0xFF8B8D98), faint = Color.White.copy(alpha = 0.08f), accent = a, onAccent = on,
+            hover = Color.White.copy(alpha = 0.045f)
         )
     } else {
         Pal(
-            dark = false, bg = Color(0xFFF3F4F6), side = Color(0xFFEBEDF1), surface = Color.White,
-            raised = Color(0xFFEDEFF3), stroke = Color.Black.copy(alpha = 0.08f), text = Color(0xFF0E1116),
-            hint = Color(0xFF667080), faint = Color.Black.copy(alpha = 0.08f), accent = a, onAccent = on,
-            glass = glass.coerceIn(0, 2), glassFill = Color.White.copy(alpha = 0.66f),
-            glassFallback = Color(0xF5FFFFFF), rim = Color.White
+            dark = false, bg = Color(0xFFF7F7F8), side = Color(0xFFF1F1F3), surface = Color.White,
+            raised = Color(0xFFF0F0F2), stroke = Color.Black.copy(alpha = 0.08f), text = Color(0xFF16171A),
+            hint = Color(0xFF6B6F7A), faint = Color.Black.copy(alpha = 0.07f), accent = a, onAccent = on,
+            hover = Color.Black.copy(alpha = 0.04f)
         )
     }
 }
@@ -147,31 +143,79 @@ val pal: Pal
     @Composable get() = LocalPal.current
 
 @Composable
-fun RayTheme(theme: Int, accent: Int, glass: Int = 1, content: @Composable () -> Unit) {
+fun RayTheme(theme: Int, accent: Int, content: @Composable () -> Unit) {
     val dark = when (theme) {
         1 -> false
         2 -> true
         else -> isSystemInDarkTheme()
     }
-    val p = palette(dark, accent, glass)
+    val p = palette(dark, accent)
     val scheme = if (dark) {
         darkColorScheme(
             primary = p.accent, onPrimary = p.onAccent, secondary = p.accent,
             background = p.bg, onBackground = p.text, surface = p.surface, onSurface = p.text,
             surfaceVariant = p.raised, onSurfaceVariant = p.hint,
-            surfaceContainer = p.surface, surfaceContainerHigh = p.raised, outline = Color(0xFF2E3440)
+            surfaceContainer = p.surface, surfaceContainerHigh = p.raised, outline = Color(0xFF2C2D33)
         )
     } else {
         lightColorScheme(
             primary = p.accent, onPrimary = p.onAccent, secondary = p.accent,
             background = p.bg, onBackground = p.text, surface = p.surface, onSurface = p.text,
             surfaceVariant = p.raised, onSurfaceVariant = p.hint,
-            surfaceContainer = Color.White, surfaceContainerHigh = Color.White, outline = Color(0xFFD0D4DB)
+            surfaceContainer = Color.White, surfaceContainerHigh = Color.White, outline = Color(0xFFDADBE0)
         )
     }
     MaterialTheme(colorScheme = scheme) {
         CompositionLocalProvider(LocalPal provides p, LocalContentColor provides p.text) {
             content()
+        }
+    }
+}
+
+// ------------------------------------------------------------------ the R mark
+
+/*
+ * Geometric R from three planes in a 77 x 100 box; the leg is the "ray" in the accent colour.
+ * Same geometry as the Android icon and desktop/launcher/make_icon.py.
+ */
+private fun PathBuilder.markBowl(x: Float, y: Float, k: Float) {
+    moveTo(x, y)
+    lineTo(x + 44f * k, y)
+    arcTo(25f * k, 25f * k, 0f, false, true, x + 44f * k, y + 50f * k)
+    lineTo(x, y + 50f * k)
+    close()
+}
+
+private fun PathBuilder.markStem(x: Float, y: Float, k: Float) {
+    moveTo(x, y + 56f * k)
+    lineTo(x + 25f * k, y + 56f * k)
+    lineTo(x + 25f * k, y + 100f * k)
+    lineTo(x, y + 100f * k)
+    close()
+}
+
+private fun PathBuilder.markLeg(x: Float, y: Float, k: Float) {
+    moveTo(x + 31f * k, y + 56f * k)
+    lineTo(x + 58f * k, y + 56f * k)
+    lineTo(x + 77f * k, y + 100f * k)
+    lineTo(x + 50f * k, y + 100f * k)
+    close()
+}
+
+@Composable
+fun RayMark(modifier: Modifier = Modifier, ink: Color = pal.text, ray: Color = pal.accent) {
+    Canvas(modifier) {
+        val k = minOf(size.width / 77f, size.height / 100f)
+        translate((size.width - 77f * k) / 2f, (size.height - 100f * k) / 2f) {
+            scale(k, k, pivot = Offset.Zero) {
+                drawPath(Path().apply {
+                    moveTo(0f, 0f); lineTo(44f, 0f)
+                    arcTo(androidx.compose.ui.geometry.Rect(19f, 0f, 69f, 50f), -90f, 180f, false)
+                    lineTo(0f, 50f); close()
+                }, ink)
+                drawPath(Path().apply { moveTo(0f, 56f); lineTo(25f, 56f); lineTo(25f, 100f); lineTo(0f, 100f); close() }, ink)
+                drawPath(Path().apply { moveTo(31f, 56f); lineTo(58f, 56f); lineTo(77f, 100f); lineTo(50f, 100f); close() }, ray)
+            }
         }
     }
 }
@@ -184,7 +228,7 @@ private fun icon(name: String, block: ImageVector.Builder.() -> Unit): ImageVect
     ImageVector.Builder(name = name, defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
         .apply(block).build()
 
-private fun ImageVector.Builder.line(width: Float = 2f, block: PathBuilder.() -> Unit) {
+private fun ImageVector.Builder.line(width: Float = 1.7f, block: PathBuilder.() -> Unit) {
     path(fill = null, stroke = INK, strokeLineWidth = width, strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round, pathBuilder = block)
 }
 
@@ -220,51 +264,21 @@ private fun PathBuilder.roundRect(x: Float, y: Float, w: Float, h: Float, r: Flo
     close()
 }
 
+/** Window and tray icon: graphite tile with the R mark. */
 private fun appIcon(): ImageVector {
-    val cyan = Color(0xFF38E1FF)
     val b = ImageVector.Builder(name = "app", defaultWidth = 32.dp, defaultHeight = 32.dp, viewportWidth = 32f, viewportHeight = 32f)
-    b.path(fill = Brush.verticalGradient(listOf(Color(0xFF2A303A), Color(0xFF0A0D12)), startY = 1f, endY = 31f)) {
-        roundRect(1f, 1f, 30f, 30f, 7.5f)
-    }
-    b.path(fill = Brush.radialGradient(listOf(cyan.copy(alpha = 0.40f), cyan.copy(alpha = 0f)), center = Offset(16f, 16f), radius = 11f)) {
-        circle(16f, 16f, 11f)
-    }
-    for (i in 0 until 24) {
-        val a = (i * 15.0 - 90.0) * PI / 180.0
-        val long = i % 6 == 0
-        val r2 = 12.8f
-        val r1 = if (long) 10.3f else 11.3f
-        val k = (1f - i / 17f).coerceAtLeast(0f)
-        val ca = cos(a).toFloat()
-        val sa = sin(a).toFloat()
-        b.path(
-            stroke = SolidColor(cyan.copy(alpha = 0.28f + 0.72f * k)),
-            strokeLineWidth = if (long) 1.4f else 0.9f,
-            strokeLineCap = StrokeCap.Round
-        ) {
-            moveTo(16f + ca * r1, 16f + sa * r1)
-            lineTo(16f + ca * r2, 16f + sa * r2)
-        }
-    }
-    b.path(fill = SolidColor(cyan.copy(alpha = 0.14f)), stroke = SolidColor(cyan.copy(alpha = 0.6f)), strokeLineWidth = 0.6f) {
-        circle(16f, 16f, 7f)
-    }
-    b.path(stroke = SolidColor(cyan), strokeLineWidth = 1.9f, strokeLineCap = StrokeCap.Round) {
-        moveTo(16f, 11.3f)
-        lineTo(16f, 15.6f)
-    }
-    b.path(stroke = SolidColor(cyan), strokeLineWidth = 1.9f, strokeLineCap = StrokeCap.Round) {
-        moveTo(18.97f, 13.53f)
-        arcTo(4.2f, 4.2f, 0f, true, true, 13.03f, 13.53f)
-    }
-    b.path(stroke = SolidColor(Color.White.copy(alpha = 0.22f)), strokeLineWidth = 0.6f) {
-        roundRect(1.3f, 1.3f, 29.4f, 29.4f, 7.2f)
-    }
+    b.path(fill = SolidColor(Color(0xFF111215))) { roundRect(1f, 1f, 30f, 30f, 7f) }
+    val k = 0.19f
+    val x = (32f - 77f * k) / 2f
+    val y = (32f - 100f * k) / 2f
+    b.path(fill = SolidColor(Color(0xFFF4F4F5))) { markBowl(x, y, k) }
+    b.path(fill = SolidColor(Color(0xFFF4F4F5))) { markStem(x, y, k) }
+    b.path(fill = SolidColor(Color(0xFF7C84FF))) { markLeg(x, y, k) }
     return b.build()
 }
 
 object Ico {
-    /** Same artwork as RayScope.exe: dark squircle, scope ring, power glyph. */
+    /** Same artwork as RayScope.exe: graphite tile, R mark with the accent leg. */
     val App: ImageVector = appIcon()
 
     val Power = icon("power") {
@@ -281,17 +295,17 @@ object Ico {
         line { moveTo(8.5f, 12f); lineTo(11f, 14.5f); lineTo(15.5f, 9.5f) }
     }
     val Bolt = icon("bolt") {
-        solid { moveTo(13f, 2f); lineTo(3f, 14f); lineTo(12f, 14f); lineTo(11f, 22f); lineTo(21f, 10f); lineTo(12f, 10f); close() }
+        line { moveTo(13f, 2f); lineTo(4f, 14f); lineTo(12f, 14f); lineTo(11f, 22f); lineTo(20f, 10f); lineTo(12f, 10f); close() }
     }
     val Home = icon("home") {
         line { moveTo(3f, 11f); lineTo(12f, 3.5f); lineTo(21f, 11f) }
         line { moveTo(5.5f, 9.5f); lineTo(5.5f, 20f); lineTo(18.5f, 20f); lineTo(18.5f, 9.5f) }
     }
     val Servers = icon("servers") {
-        line { rect(3f, 4f, 18f, 7f) }
-        line { rect(3f, 13f, 18f, 7f) }
-        line(2.6f) { moveTo(7f, 7.5f); lineTo(7.01f, 7.5f) }
-        line(2.6f) { moveTo(7f, 16.5f); lineTo(7.01f, 16.5f) }
+        line { roundRect(3f, 4f, 18f, 7f, 1.5f) }
+        line { roundRect(3f, 13f, 18f, 7f, 1.5f) }
+        line(2.4f) { moveTo(7f, 7.5f); lineTo(7.01f, 7.5f) }
+        line(2.4f) { moveTo(7f, 16.5f); lineTo(7.01f, 16.5f) }
     }
     val Radar = icon("radar") {
         line { circle(12f, 12f, 9f) }
@@ -301,11 +315,11 @@ object Ico {
     val Sliders = icon("sliders") {
         line { moveTo(4f, 7f); lineTo(20f, 7f) }
         line { moveTo(4f, 17f); lineTo(20f, 17f) }
-        solid { circle(9f, 7f, 2.6f) }
-        solid { circle(15f, 17f, 2.6f) }
+        solid { circle(9f, 7f, 2.4f) }
+        solid { circle(15f, 17f, 2.4f) }
     }
     val Logs = icon("logs") {
-        line { rect(5f, 3f, 14f, 18f) }
+        line { roundRect(5f, 3f, 14f, 18f, 1.5f) }
         line { moveTo(8.5f, 8f); lineTo(15.5f, 8f) }
         line { moveTo(8.5f, 12f); lineTo(15.5f, 12f) }
         line { moveTo(8.5f, 16f); lineTo(13f, 16f) }
@@ -347,7 +361,7 @@ object Ico {
         line { moveTo(6f, 7f); lineTo(7f, 20f); lineTo(17f, 20f); lineTo(18f, 7f) }
     }
     val Copy = icon("copy") {
-        line { rect(8f, 8f, 12f, 12f) }
+        line { roundRect(8f, 8f, 12f, 12f, 1.5f) }
         line { moveTo(16f, 8f); lineTo(16f, 4f); lineTo(4f, 4f); lineTo(4f, 16f); lineTo(8f, 16f) }
     }
     val Globe = icon("globe") {
@@ -356,8 +370,8 @@ object Ico {
         line { moveTo(12f, 3f); arcTo(4.5f, 9f, 0f, false, true, 12f, 21f); arcTo(4.5f, 9f, 0f, false, true, 12f, 3f) }
     }
     val Clipboard = icon("clipboard") {
-        line { rect(5f, 4.5f, 14f, 16.5f) }
-        line { rect(9f, 2.5f, 6f, 3.5f) }
+        line { roundRect(5f, 4.5f, 14f, 16.5f, 1.5f) }
+        line { roundRect(9f, 2.5f, 6f, 3.5f, 1f) }
     }
     val Download = icon("download") {
         line { moveTo(12f, 4f); lineTo(12f, 15f) }
@@ -372,12 +386,12 @@ object Ico {
     val Alert = icon("alert") {
         line { moveTo(12f, 3f); lineTo(22f, 20f); lineTo(2f, 20f); close() }
         line { moveTo(12f, 9f); lineTo(12f, 13.5f) }
-        line(2.6f) { moveTo(12f, 17f); lineTo(12.01f, 17f) }
+        line(2.4f) { moveTo(12f, 17f); lineTo(12.01f, 17f) }
     }
     val More = icon("more") {
-        solid { circle(5f, 12f, 1.7f) }
-        solid { circle(12f, 12f, 1.7f) }
-        solid { circle(19f, 12f, 1.7f) }
+        solid { circle(5f, 12f, 1.6f) }
+        solid { circle(12f, 12f, 1.6f) }
+        solid { circle(19f, 12f, 1.6f) }
     }
     val Sort = icon("sort") {
         line { moveTo(4f, 7f); lineTo(20f, 7f) }
@@ -407,12 +421,28 @@ object Ico {
 
 // ------------------------------------------------------------------ helpers
 
+/** Screens ask for radii from the old 12-20 dp scale; they are halved so cards sit at 6-10 dp. */
+fun soft(radius: Dp): RoundedCornerShape = RoundedCornerShape((radius * 0.5f).coerceIn(3.dp, 10.dp))
+
 fun Modifier.card(p: Pal, radius: Dp = 18.dp, stroke: Color = p.stroke, width: Dp = 1.dp): Modifier {
-    val s = RoundedCornerShape(radius)
+    val s = soft(radius)
     return this.clip(s).background(p.surface).border(width, stroke, s)
 }
 
 fun Modifier.hand(): Modifier = this.pointerHoverIcon(PointerIcon.Hand)
+
+/** Clickable with a hover tint instead of a ripple. */
+@Composable
+fun Modifier.press(enabled: Boolean = true, onClick: () -> Unit): Modifier {
+    val src = remember { MutableInteractionSource() }
+    val hovered by src.collectIsHoveredAsState()
+    val p = pal
+    return this
+        .background(if (hovered && enabled) p.hover else Color.Transparent)
+        .hoverable(src, enabled)
+        .clickable(interactionSource = src, indication = null, enabled = enabled, onClick = onClick)
+        .hand()
+}
 
 @Composable
 fun spin(ms: Int = 900): State<Float> {
@@ -442,40 +472,51 @@ fun delayLevel(d: Long): Int {
     }
 }
 
+/** Icon colour in rows and tiles: status colours stay, decorative colours fold into grey. */
+@Composable
+private fun rowTint(tint: Color): Color {
+    val p = pal
+    return if (tint == Bad || tint == Good || tint == Mid || tint == p.accent || tint == Yellow) tint else p.hint
+}
+
 // ------------------------------------------------------------------ text blocks
 
+/** Section label. Sentence case, muted. */
 @Composable
 fun Caps(text: String, modifier: Modifier = Modifier, color: Color = Color.Unspecified) {
     Text(
-        text.uppercase(), color = if (color == Color.Unspecified) pal.hint else color,
-        fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp,
+        text, color = if (color == Color.Unspecified) pal.hint else color,
+        fontSize = 12.5.sp, fontWeight = FontWeight.Medium,
         maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = modifier
     )
 }
 
 @Composable
 fun Tag(text: String, color: Color = Color.Unspecified) {
-    val col = if (color == Color.Unspecified) pal.hint else color
+    val p = pal
+    val col = if (color == Color.Unspecified) p.hint else color
+    val shape = RoundedCornerShape(4.dp)
     Text(
-        text, color = col, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace,
-        maxLines = 1, letterSpacing = 0.4.sp,
-        modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(col.copy(alpha = 0.12f)).padding(horizontal = 6.dp, vertical = 2.dp)
+        text, color = col, fontSize = 10.5.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace,
+        maxLines = 1,
+        modifier = Modifier.clip(shape).border(1.dp, p.stroke, shape).padding(horizontal = 6.dp, vertical = 2.dp)
     )
 }
 
 @Composable
 fun DevTag() {
-    Tag("DEV", Purple)
+    Tag("dev")
 }
 
 @Composable
 fun Header(title: String, subtitle: String? = null, trailing: @Composable RowScope.() -> Unit = {}) {
     val p = pal
-    Row(Modifier.fillMaxWidth().padding(bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(bottom = 20.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(title, color = p.text, fontSize = 30.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.7).sp, maxLines = 1)
+            Text(title, color = p.text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.3).sp, maxLines = 1)
             if (subtitle != null) {
-                Text(subtitle, color = p.hint, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(2.dp))
+                Text(subtitle, color = p.hint, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         trailing()
@@ -493,14 +534,14 @@ fun Section(
     val p = pal
     Column(modifier.fillMaxWidth()) {
         if (title != null) {
-            Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(start = 2.dp, end = 2.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Caps(title, Modifier.weight(1f))
                 if (trailing != null) trailing()
             }
         }
         Column(Modifier.fillMaxWidth().card(p, 16.dp), content = content)
         if (footer != null) {
-            Text(footer, color = p.hint, fontSize = 12.sp, lineHeight = 16.sp, modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 6.dp))
+            Text(footer, color = p.hint, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.padding(start = 2.dp, end = 2.dp, top = 7.dp))
         }
     }
 }
@@ -520,7 +561,7 @@ fun KV(k: String, v: String, valueColor: Color = Color.Unspecified, mono: Boolea
             color = if (valueColor == Color.Unspecified) p.text else valueColor,
             fontSize = 13.sp,
             fontFamily = if (mono) FontFamily.Monospace else FontFamily.Default,
-            fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis, style = TNum,
+            maxLines = 2, overflow = TextOverflow.Ellipsis, style = TNum,
             modifier = Modifier.weight(0.58f)
         )
     }
@@ -533,13 +574,16 @@ fun KVIf(k: String, v: String, mono: Boolean = false) {
 
 @Composable
 fun IconTile(icon: ImageVector, tint: Color, size: Dp = 34.dp, iconSize: Dp = 18.dp, iconModifier: Modifier = Modifier) {
-    Box(Modifier.size(size).clip(RoundedCornerShape(size * 0.32f)).background(tint.copy(alpha = 0.15f)), contentAlignment = Alignment.Center) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = iconModifier.size(iconSize))
+    val p = pal
+    val shape = soft(size * 0.45f)
+    Box(Modifier.size(size).clip(shape).background(p.raised).border(1.dp, p.stroke, shape), contentAlignment = Alignment.Center) {
+        Icon(icon, contentDescription = null, tint = rowTint(tint), modifier = iconModifier.size(iconSize))
     }
 }
 
 // ------------------------------------------------------------------ controls
 
+/** Primary: filled accent. Secondary: neutral plate with a hairline; red text only for destructive actions. */
 @Composable
 fun Btn(
     text: String,
@@ -552,57 +596,69 @@ fun Btn(
     iconRotation: State<Float>? = null,
 ) {
     val p = pal
-    val tint = if (color == Color.Unspecified) p.accent else color
-    val fg = if (primary) (if (tint.luminance() > 0.45f) InkOn else Color.White) else tint
-    val shape = RoundedCornerShape(12.dp)
+    val fill = if (color == Color.Unspecified) p.accent else color
+    val fg = when {
+        primary -> if (fill.luminance() > 0.45f) InkOn else Color.White
+        color == Bad -> Bad
+        else -> p.text
+    }
+    val shape = RoundedCornerShape(7.dp)
+    val src = remember { MutableInteractionSource() }
+    val hovered by src.collectIsHoveredAsState()
+    val bg = when {
+        primary -> if (hovered && enabled) lerp(fill, Color.White, 0.08f) else fill
+        hovered && enabled -> lerp(p.raised, p.text, 0.06f)
+        else -> p.raised
+    }
+    var m = modifier.alpha(if (enabled) 1f else 0.45f).clip(shape).background(bg)
+    if (!primary) m = m.border(1.dp, p.stroke, shape)
     Row(
-        modifier.alpha(if (enabled) 1f else 0.5f).clip(shape)
-            .background(if (primary) tint else tint.copy(alpha = if (p.dark) 0.14f else 0.10f))
-            .clickable(enabled = enabled, onClick = onClick).hand()
-            .padding(horizontal = 14.dp, vertical = 9.dp),
+        m.hoverable(src, enabled)
+            .clickable(interactionSource = src, indication = null, enabled = enabled, onClick = onClick).hand()
+            .padding(horizontal = 12.dp, vertical = 7.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) {
             Icon(
-                icon, contentDescription = null, tint = fg,
-                modifier = Modifier.size(16.dp).graphicsLayer { rotationZ = iconRotation?.value ?: 0f }
+                icon, contentDescription = null, tint = if (primary || color == Bad) fg else p.hint,
+                modifier = Modifier.size(15.dp).graphicsLayer { rotationZ = iconRotation?.value ?: 0f }
             )
             Spacer(Modifier.width(7.dp))
         }
-        Text(text, color = fg, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(text, color = fg, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
-fun IconBtn(icon: ImageVector, desc: String, onClick: () -> Unit, tint: Color = Color.Unspecified, enabled: Boolean = true, size: Dp = 34.dp) {
+fun IconBtn(icon: ImageVector, desc: String, onClick: () -> Unit, tint: Color = Color.Unspecified, enabled: Boolean = true, size: Dp = 32.dp) {
     Box(
-        Modifier.size(size).alpha(if (enabled) 1f else 0.4f).clip(CircleShape).clickable(enabled = enabled, onClick = onClick).hand(),
+        Modifier.size(size).alpha(if (enabled) 1f else 0.4f).clip(RoundedCornerShape(6.dp)).press(enabled, onClick),
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, contentDescription = desc, tint = if (tint == Color.Unspecified) pal.hint else tint, modifier = Modifier.size(size * 0.52f))
+        Icon(icon, contentDescription = desc, tint = if (tint == Color.Unspecified) pal.hint else tint, modifier = Modifier.size(size * 0.5f))
     }
 }
 
 @Composable
 fun RChip(text: String, selected: Boolean, count: Int? = null, icon: ImageVector? = null, onClick: () -> Unit) {
     val p = pal
-    val bg by animateColorAsState(if (selected) p.accent else p.raised, tween(180))
-    val fg by animateColorAsState(if (selected) p.onAccent else p.text, tween(180))
-    val shape = RoundedCornerShape(50)
+    val bg by animateColorAsState(if (selected) p.accent.copy(alpha = if (p.dark) 0.18f else 0.12f) else Color.Transparent, tween(140))
+    val line by animateColorAsState(if (selected) p.accent.copy(alpha = 0.55f) else p.stroke, tween(140))
+    val shape = RoundedCornerShape(6.dp)
     Row(
-        Modifier.clip(shape).background(bg).border(1.dp, if (selected) Color.Transparent else p.stroke, shape)
-            .clickable(onClick = onClick).hand().padding(horizontal = 12.dp, vertical = 6.dp),
+        Modifier.clip(shape).background(bg).border(1.dp, line, shape)
+            .press(onClick = onClick).padding(horizontal = 10.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) {
-            Icon(icon, contentDescription = null, tint = if (selected) fg else Yellow, modifier = Modifier.size(14.dp))
+            Icon(icon, contentDescription = null, tint = if (selected) p.text else Yellow, modifier = Modifier.size(13.dp))
             Spacer(Modifier.width(6.dp))
         }
-        Text(text, color = fg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(text, color = if (selected) p.text else p.hint, fontSize = 13.sp, fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal, maxLines = 1)
         if (count != null) {
             Spacer(Modifier.width(6.dp))
-            Text("$count", color = fg.copy(alpha = 0.6f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, style = TNum)
+            Text("$count", color = p.hint, fontSize = 12.sp, style = TNum)
         }
     }
 }
@@ -610,34 +666,36 @@ fun RChip(text: String, selected: Boolean, count: Int? = null, icon: ImageVector
 @Composable
 fun Toggle(checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     val p = pal
-    val t by animateFloatAsState(if (checked) 1f else 0f, spring(dampingRatio = 0.7f, stiffness = 600f))
-    val track = lerp(p.raised, p.accent, t)
-    val thumb = lerp(if (p.dark) Color(0xFF8E97A6) else Color.White, p.onAccent, t)
+    val t by animateFloatAsState(if (checked) 1f else 0f, tween(140))
+    val track = lerp(if (p.dark) Color(0xFF2A2B31) else Color(0xFFD9DADF), p.accent, t)
     Box(
-        Modifier.size(width = 42.dp, height = 24.dp).alpha(if (enabled) 1f else 0.5f)
-            .clip(CircleShape).background(track).border(1.dp, p.stroke, CircleShape)
-            .clickable(enabled = enabled) { onChange(!checked) }.hand()
+        Modifier.size(width = 34.dp, height = 20.dp).alpha(if (enabled) 1f else 0.5f)
+            .clip(CircleShape).background(track)
+            .clickable(enabled = enabled, interactionSource = remember { MutableInteractionSource() }, indication = null) { onChange(!checked) }
+            .hand()
             .padding(3.dp)
     ) {
-        Box(Modifier.offset(x = 18.dp * t).size(18.dp).clip(CircleShape).background(thumb))
+        Box(Modifier.offset(x = 14.dp * t).size(14.dp).clip(CircleShape).background(Color.White))
     }
 }
 
 @Composable
 fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
     val p = pal
-    val shape = RoundedCornerShape(12.dp)
-    Row(modifier.fillMaxWidth().height(38.dp).clip(shape).background(p.raised).border(1.dp, p.stroke, shape).padding(3.dp)) {
+    Row(modifier.fillMaxWidth().height(32.dp).clip(RoundedCornerShape(7.dp)).background(p.raised).padding(2.dp)) {
         options.forEachIndexed { i, t ->
             val sel = i == selected
-            val bg by animateColorAsState(if (sel) (if (p.dark) Color(0xFF2A303B) else Color.White) else Color.Transparent, tween(180))
+            val inner = RoundedCornerShape(5.dp)
+            val bg by animateColorAsState(if (sel) (if (p.dark) Color(0xFF2A2B31) else Color.White) else Color.Transparent, tween(140))
             Box(
-                Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(9.dp)).background(bg).clickable { onSelect(i) }.hand(),
+                Modifier.weight(1f).fillMaxHeight().clip(inner).background(bg)
+                    .border(1.dp, if (sel) p.stroke else Color.Transparent, inner)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onSelect(i) }.hand(),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     t, color = if (sel) p.text else p.hint, fontSize = 13.sp,
-                    fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis
+                    fontWeight = if (sel) FontWeight.Medium else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -656,25 +714,25 @@ fun Field(
 ) {
     val p = pal
     val ff = if (mono) FontFamily.Monospace else FontFamily.Default
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(7.dp)
     Row(
         modifier.clip(shape).background(if (onCard) p.raised else p.surface).border(1.dp, p.stroke, shape)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (leading != null) {
-            Icon(leading, contentDescription = null, tint = p.hint, modifier = Modifier.size(16.dp))
+            Icon(leading, contentDescription = null, tint = p.hint, modifier = Modifier.size(15.dp))
             Spacer(Modifier.width(8.dp))
         }
         Box(Modifier.weight(1f)) {
             if (value.isEmpty()) {
-                Text(placeholder, color = p.hint.copy(alpha = 0.7f), fontSize = 14.sp, fontFamily = ff, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(placeholder, color = p.hint.copy(alpha = 0.7f), fontSize = 13.sp, fontFamily = ff, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             BasicTextField(
                 value = value,
                 onValueChange = onChange,
                 singleLine = true,
-                textStyle = TextStyle(color = p.text, fontSize = 14.sp, fontFamily = ff),
+                textStyle = TextStyle(color = p.text, fontSize = 13.sp, fontFamily = ff),
                 cursorBrush = SolidColor(p.accent),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -688,10 +746,10 @@ fun Field(
 fun SettingRow(title: String, subtitle: String? = null, enabled: Boolean = true, onClick: (() -> Unit)? = null, trailing: @Composable RowScope.() -> Unit = {}) {
     val p = pal
     var m: Modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.45f)
-    if (onClick != null && enabled) m = m.clickable(onClick = onClick).hand()
-    Row(m.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    if (onClick != null && enabled) m = m.press(onClick = onClick)
+    Row(m.padding(horizontal = 16.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(title, color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text(title, color = p.text, fontSize = 13.5.sp)
             if (subtitle != null) Text(subtitle, color = p.hint, fontSize = 12.sp, lineHeight = 16.sp)
         }
         Spacer(Modifier.width(12.dp))
@@ -721,13 +779,13 @@ fun SliderRow(
     var raw by remember(value) { mutableFloatStateOf(value.toFloat()) }
     val s = step.coerceAtLeast(1)
     fun snap(f: Float): Int = (((f - range.first) / s).roundToInt() * s + range.first).coerceIn(range.first, range.last)
-    Column(Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.45f).padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp)) {
+    Column(Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.45f).padding(start = 16.dp, end = 16.dp, top = 11.dp, bottom = 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(title, color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text(title, color = p.text, fontSize = 13.5.sp)
                 if (subtitle != null) Text(subtitle, color = p.hint, fontSize = 12.sp, lineHeight = 16.sp)
             }
-            Text(format(snap(raw)), color = p.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, style = TNum)
+            Text(format(snap(raw)), color = p.hint, fontSize = 13.sp, style = TNum)
         }
         Slider(
             value = raw,
@@ -742,7 +800,7 @@ fun SliderRow(
                 thumbColor = p.accent, activeTrackColor = p.accent, inactiveTrackColor = p.raised,
                 activeTickColor = Color.Transparent, inactiveTickColor = Color.Transparent
             ),
-            modifier = Modifier.height(30.dp)
+            modifier = Modifier.height(28.dp)
         )
     }
 }
@@ -751,8 +809,8 @@ fun SliderRow(
 @Composable
 fun ChoiceRow(title: String, options: List<String>, selected: Int, subtitle: String? = null, enabled: Boolean = true, onSelect: (Int) -> Unit) {
     val p = pal
-    Column(Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.45f).padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text(title, color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+    Column(Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.45f).padding(horizontal = 16.dp, vertical = 11.dp)) {
+        Text(title, color = p.text, fontSize = 13.5.sp)
         if (subtitle != null) Text(subtitle, color = p.hint, fontSize = 12.sp, lineHeight = 16.sp)
         Spacer(Modifier.height(8.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -764,8 +822,8 @@ fun ChoiceRow(title: String, options: List<String>, selected: Int, subtitle: Str
 @Composable
 fun FieldRow(title: String, value: String, placeholder: String, subtitle: String? = null, mono: Boolean = true, onChange: (String) -> Unit) {
     val p = pal
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text(title, color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 11.dp)) {
+        Text(title, color = p.text, fontSize = 13.5.sp)
         if (subtitle != null) Text(subtitle, color = p.hint, fontSize = 12.sp, lineHeight = 16.sp)
         Spacer(Modifier.height(8.dp))
         Field(value, onChange, placeholder, Modifier.fillMaxWidth(), mono = mono)
@@ -778,28 +836,15 @@ fun FieldRow(title: String, value: String, placeholder: String, subtitle: String
 @Composable
 fun FlagBox(code: String, size: Dp = 40.dp) {
     val p = pal
-    val shape = RoundedCornerShape(size * 0.28f)
+    val shape = RoundedCornerShape(size * 0.2f)
     val known = code in FLAG_CODES
     Box(Modifier.size(size).clip(shape).background(p.raised), contentAlignment = Alignment.Center) {
         when {
-            known -> Canvas(Modifier.fillMaxSize()) {
-                drawFlag(code)
-                drawRect(
-                    Brush.verticalGradient(
-                        listOf(Color.White.copy(alpha = 0.22f), Color.Transparent, Color.Black.copy(alpha = 0.14f))
-                    )
-                )
-            }
+            known -> Canvas(Modifier.fillMaxSize()) { drawFlag(code) }
             code.isEmpty() -> Icon(Ico.Globe, contentDescription = null, tint = p.hint, modifier = Modifier.size(size * 0.46f))
-            else -> Text(code, color = p.text, fontSize = (size.value * 0.32f).sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+            else -> Text(code, color = p.text, fontSize = (size.value * 0.32f).sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace)
         }
-        Box(
-            Modifier.matchParentSize().border(
-                1.dp,
-                if (known) (if (p.dark) Color.White.copy(alpha = 0.16f) else Color.Black.copy(alpha = 0.10f)) else p.stroke,
-                shape
-            )
-        )
+        Box(Modifier.matchParentSize().border(1.dp, p.stroke, shape))
     }
 }
 
@@ -808,9 +853,9 @@ fun SignalBars(d: Long, modifier: Modifier = Modifier) {
     val p = pal
     val col = delayColor(d)
     val lvl = delayLevel(d)
-    Row(modifier.height(12.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
+    Row(modifier.height(11.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
         for (i in 1..4) {
-            Box(Modifier.width(3.dp).height((3 * i).dp).clip(RoundedCornerShape(1.dp)).background(if (i <= lvl) col else p.faint))
+            Box(Modifier.width(2.5.dp).height((2 + 2.25f * i).dp).clip(RoundedCornerShape(1.dp)).background(if (i <= lvl) col else p.faint))
         }
     }
 }
@@ -821,29 +866,31 @@ fun LatencyText(d: Long, size: TextUnit = 17.sp) {
     val col by animateColorAsState(delayColor(d), tween(300))
     if (d >= 0L || d == -2L) {
         Row(verticalAlignment = Alignment.Bottom) {
-            Text(if (d == -2L) "—" else "$d", color = col, fontSize = size, fontWeight = FontWeight.Bold, style = TNum, maxLines = 1)
-            if (d >= 0) Text(" ms", color = p.hint, fontSize = 10.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(bottom = 2.dp))
+            Text(if (d == -2L) "—" else "$d", color = if (d >= 0) p.text else col, fontSize = size, fontWeight = FontWeight.Medium, style = TNum, maxLines = 1)
+            if (d >= 0) Text(" ms", color = p.hint, fontSize = 10.sp, modifier = Modifier.padding(bottom = 2.dp))
         }
     } else {
-        Icon(Ico.Close, contentDescription = "нет ответа", tint = col, modifier = Modifier.size((size.value * 0.95f).dp))
+        Icon(Ico.Close, contentDescription = "нет ответа", tint = col, modifier = Modifier.size((size.value * 0.9f).dp))
     }
 }
 
 @Composable
 fun DelayBadge(d: Long) {
+    val p = pal
     val col = delayColor(d)
     val txt = when {
         d == -2L -> "—"
         d < 0 -> "нет"
         else -> "$d ms"
     }
+    val shape = RoundedCornerShape(6.dp)
     Row(
-        Modifier.clip(RoundedCornerShape(50)).background(col.copy(alpha = 0.15f)).padding(horizontal = 8.dp, vertical = 3.dp),
+        Modifier.clip(shape).border(1.dp, p.stroke, shape).padding(horizontal = 7.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.size(6.dp).clip(CircleShape).background(col))
         Spacer(Modifier.width(5.dp))
-        Text(txt, color = col, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, style = TNum)
+        Text(txt, color = p.text, fontSize = 12.sp, maxLines = 1, style = TNum)
     }
 }
 
@@ -851,7 +898,7 @@ fun DelayBadge(d: Long) {
 fun SlimProgress(progress: Float, modifier: Modifier = Modifier) {
     val p = pal
     val v by animateFloatAsState(progress.coerceIn(0f, 1f), tween(300))
-    Box(modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(50)).background(p.raised)) {
+    Box(modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(50)).background(p.faint)) {
         Box(Modifier.fillMaxWidth(v).fillMaxHeight().clip(RoundedCornerShape(50)).background(p.accent))
     }
 }
