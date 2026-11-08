@@ -1,5 +1,6 @@
 package com.rayscope.desktop
 
+import com.rayscope.sub.ExitIp
 import com.rayscope.sub.SubFormats
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -124,7 +125,7 @@ object Store {
             l.map {
                 it.copy(
                     delay = Server.DELAY_UNTESTED, pingKind = 0, tcpPing = Server.DELAY_UNTESTED, lastError = "",
-                    successCount = 0, failCount = 0,
+                    successCount = 0, failCount = 0, exitIp = "", exitCc = "", exitAt = 0,
                 )
             }
         }
@@ -164,6 +165,9 @@ object Store {
                         favorite = o.favorite,
                         successCount = o.successCount,
                         failCount = o.failCount,
+                        exitIp = o.exitIp,
+                        exitCc = o.exitCc,
+                        exitAt = o.exitAt,
                     )
                 }
             }
@@ -287,6 +291,16 @@ object Actions {
         }
     }
 
+    private fun applyExit(id: String, e: ExitIp.Exit) {
+        Store.update(id) { it.copy(exitIp = e.ip, exitCc = e.cc, exitAt = System.currentTimeMillis()) }
+    }
+
+    /** "Рабочих 40 из 141", plus how many of them leave from another country than their name says. */
+    private fun summary(ok: Int, total: Int): String {
+        val fake = Store.servers.value.count { it.isWorking && it.isFake() }
+        return "Рабочих серверов: $ok из $total" + if (fake > 0) " · страна не та, что в названии: $fake" else ""
+    }
+
     /** Ping every server the way the settings say: a request through the core, a TCP handshake or ICMP. */
     suspend fun pingAll(kind: Int = Store.prefs.value.pingMode) {
         if (kind == 1 || kind == 2) quickAll(kind) else testAll()
@@ -302,14 +316,14 @@ object Actions {
         progress.value = 0 to list.size
         val done = AtomicInteger(0)
         try {
-            Tester.realDelays(list, Store.prefs.value) { id, d, err ->
+            Tester.realDelays(list, Store.prefs.value, onExit = { id, e -> applyExit(id, e) }) { id, d, err ->
                 applyResult(id, d, err)
                 progress.value = done.incrementAndGet() to list.size
             }
             Store.saveServers()
             val ok = Store.servers.value.count { it.isWorking }
             Log.add("Проверка: рабочих $ok из ${list.size}")
-            Notice.show("Рабочих серверов: $ok из ${list.size}")
+            Notice.show(summary(ok, list.size))
         } finally {
             testing.value = false
         }
@@ -342,7 +356,7 @@ object Actions {
                 }.awaitAll()
             }
             if (udp.isNotEmpty()) {
-                Tester.realDelays(udp, p) { id, d, err ->
+                Tester.realDelays(udp, p, onExit = { id, e -> applyExit(id, e) }) { id, d, err ->
                     applyResult(id, d, err)
                     progress.value = done.incrementAndGet() to list.size
                 }
@@ -373,7 +387,7 @@ object Actions {
             val (d, err) = quick(s, kind, p.pingTimeout)
             applyResult(id, d, err, kind)
         } else {
-            Tester.realDelays(listOf(s), p) { sid, d, err -> applyResult(sid, d, err) }
+            Tester.realDelays(listOf(s), p, onExit = { sid, e -> applyExit(sid, e) }) { sid, d, err -> applyResult(sid, d, err) }
             val t = Tester.tcp(s, p.pingTimeout)
             Store.update(id) { it.copy(tcpPing = t) }
         }
