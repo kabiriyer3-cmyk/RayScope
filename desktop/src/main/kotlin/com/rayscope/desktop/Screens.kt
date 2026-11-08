@@ -83,10 +83,10 @@ fun CheckScreen() {
     }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(start = 32.dp, end = 32.dp, top = 28.dp, bottom = TAB_SPACE),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(start = PAGE_PAD, end = PAGE_PAD, top = PAGE_TOP, bottom = TAB_SPACE),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Header("Проверка", "Виден ли настоящий IP и открываются ли сервисы") {
+        Header("Проверка", "Виден ли настоящий IP") {
             Btn(
                 if (cs.running) "Проверяю…" else "Проверить", { Actions.go { IpCheck.run() } },
                 primary = true, icon = Ico.Refresh, enabled = !cs.running,
@@ -94,17 +94,15 @@ fun CheckScreen() {
             )
         }
         Verdict(cs)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            IpCard("Настоящий IP", "Так вас видят без VPN", cs.real, cs.realErr, prefs.dev, Modifier.weight(1f))
-            IpCard(
-                "Через VPN",
-                if (cs.wasConnected) cs.serverName else "VPN был выключен",
-                cs.vpn,
-                if (cs.wasConnected) cs.vpnErr else "Подключитесь и проверьте ещё раз",
-                prefs.dev,
-                Modifier.weight(1f)
-            )
-        }
+        IpCard(
+            "Через VPN",
+            if (cs.wasConnected) cs.serverName else "VPN был выключен",
+            cs.vpn,
+            if (cs.wasConnected) cs.vpnErr else "Подключитесь и проверьте ещё раз",
+            prefs.dev,
+            Modifier.fillMaxWidth()
+        )
+        IpCard("Настоящий IP", "Так вас видят без VPN", cs.real, cs.realErr, prefs.dev, Modifier.fillMaxWidth())
         Services(cs, st)
         if (prefs.dev) History(cs)
     }
@@ -130,20 +128,20 @@ private fun Verdict(cs: CheckState) {
         p.hint -> Ico.Radar
         else -> Ico.Alert
     }
-    Row(
-        Modifier.fillMaxWidth().card(p, 20.dp, col.copy(alpha = 0.35f)).padding(18.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconTile(icon, col, 40.dp, 20.dp)
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, color = p.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-            Text(sub, color = p.hint, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (cs.checkedAt > 0) Text("Проверено: " + Fmt.ago(cs.checkedAt), color = p.hint, fontSize = 12.sp)
+    Column(Modifier.fillMaxWidth().card(p, 20.dp, col.copy(alpha = 0.35f)).padding(14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconTile(icon, col, 38.dp, 19.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, color = p.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(sub, color = p.hint, fontSize = 12.5.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (cs.checkedAt > 0) Text("Проверено: " + Fmt.ago(cs.checkedAt), color = p.hint, fontSize = 11.5.sp)
+            }
         }
         if (cs.wasConnected && vpn != null) {
             val ok = real == null || vpn.ip != real.ip
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                 RouteNode("Вы", real?.countryCode.orEmpty())
                 RouteLink(if (ok) Good else Bad)
                 RouteNode("Сервер", vpn.countryCode)
@@ -164,7 +162,7 @@ private fun RouteNode(label: String, code: String) {
 
 @Composable
 private fun RouteLink(c: Color) {
-    Box(Modifier.padding(horizontal = 6.dp).padding(bottom = 16.dp).width(30.dp).height(2.dp).clip(RoundedCornerShape(1.dp)).background(c.copy(alpha = 0.7f)))
+    Box(Modifier.padding(horizontal = 8.dp).padding(bottom = 16.dp).width(36.dp).height(2.dp).clip(RoundedCornerShape(1.dp)).background(c.copy(alpha = 0.7f)))
 }
 
 @Composable
@@ -215,28 +213,28 @@ private fun Services(cs: CheckState, st: Status) {
     val p = pal
     val connected = st.state == ConnState.CONNECTED
     Section(
-        "Доступ к сервисам",
+        "Сервисы",
         footer = "Время ответа главной страницы напрямую и через туннель.",
         trailing = {
             Btn(
-                if (cs.sitesRunning) "Проверяю…" else "Проверить сервисы", { Actions.go { IpCheck.runSites() } },
+                if (cs.sitesRunning) "Проверяю…" else "Проверить", { Actions.go { IpCheck.runSites() } },
                 enabled = !cs.sitesRunning, icon = Ico.Globe
             )
         }
     ) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
             Caps("Сервис", Modifier.weight(1f))
-            Caps("Напрямую", Modifier.width(130.dp))
-            Caps("Через VPN", Modifier.width(130.dp))
+            Caps("Напрямую", Modifier.width(84.dp))
+            Caps("VPN", Modifier.width(84.dp))
         }
         Line()
         val list = cs.sites.ifEmpty { IpCheck.SITES.map { Site(it.first, it.second) } }
         list.forEachIndexed { i, s ->
             if (i > 0) Line()
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(s.name, color = p.text, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
-                Box(Modifier.width(130.dp)) { DelayBadge(s.direct) }
-                Box(Modifier.width(130.dp)) {
+                Text(s.name, color = p.text, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Box(Modifier.width(84.dp)) { DelayBadge(s.direct) }
+                Box(Modifier.width(84.dp)) {
                     if (cs.sites.isNotEmpty() && s.vpn == -2L && !connected) Text("VPN выкл", color = p.hint, fontSize = 12.sp) else DelayBadge(s.vpn)
                 }
             }
@@ -362,10 +360,10 @@ fun SettingsScreen(onOpenLog: () -> Unit) {
 
     Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
         Column(
-            Modifier.widthIn(max = 860.dp).fillMaxWidth().padding(start = 32.dp, end = 32.dp, top = 28.dp, bottom = TAB_SPACE),
-            verticalArrangement = Arrangement.spacedBy(22.dp)
+            Modifier.fillMaxWidth().padding(start = PAGE_PAD, end = PAGE_PAD, top = PAGE_TOP, bottom = TAB_SPACE),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            Header("Настройки", "Подключение, пинг, маршруты, запуск и внешний вид")
+            Header("Настройки", "Подключение, маршруты, запуск, вид")
 
             if (dirty && connected) {
                 Row(
@@ -374,8 +372,8 @@ fun SettingsScreen(onOpenLog: () -> Unit) {
                 ) {
                     Icon(Ico.Refresh, contentDescription = null, tint = p.accent, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(10.dp))
-                    Text("Новые настройки применятся после переподключения", color = p.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                    Btn("Переподключить", {
+                    Text("Применится после переподключения", color = p.text, fontSize = 12.5.sp, modifier = Modifier.weight(1f))
+                    Btn("Обновить", {
                         Engine.reconnect()
                         dirty = false
                     }, primary = true)
@@ -386,7 +384,7 @@ fun SettingsScreen(onOpenLog: () -> Unit) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
                     Text("Тема", color = p.text, fontSize = 13.5.sp)
                     Spacer(Modifier.height(8.dp))
-                    Segmented(listOf("Как в системе", "Светлая", "Тёмная"), prefs.theme.coerceIn(0, 2), { i -> Store.setPrefs { it.copy(theme = i) } })
+                    Segmented(listOf("Системная", "Светлая", "Тёмная"), prefs.theme.coerceIn(0, 2), { i -> Store.setPrefs { it.copy(theme = i) } })
                 }
                 Line()
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -659,16 +657,14 @@ fun LogScreen(onBack: () -> Unit) {
     LaunchedEffect(lines.size) {
         if (lines.isNotEmpty()) list.scrollToItem(lines.size - 1)
     }
-    Column(Modifier.fillMaxSize().padding(start = 32.dp, end = 32.dp, top = 28.dp, bottom = TAB_SPACE)) {
-        Header("Журнал", "Строк: " + lines.size + " · ядро и события программы") {
-            Btn("Назад", onBack, icon = Ico.Back, color = p.hint)
-            Spacer(Modifier.width(8.dp))
-            Btn("Скопировать", {
+    Column(Modifier.fillMaxSize().padding(start = PAGE_PAD, end = PAGE_PAD, top = PAGE_TOP, bottom = TAB_SPACE)) {
+        Header("Журнал", "Строк: " + lines.size) {
+            IconBtn(Ico.Back, "Назад", onBack)
+            IconBtn(Ico.Copy, "Скопировать", {
                 Clip.copy(lines.joinToString(System.lineSeparator()))
                 Notice.show("Журнал скопирован")
-            }, icon = Ico.Copy)
-            Spacer(Modifier.width(8.dp))
-            Btn("Очистить", { Log.lines.value = emptyList() }, icon = Ico.Trash, color = Bad)
+            })
+            IconBtn(Ico.Trash, "Очистить", { Log.lines.value = emptyList() }, tint = Bad)
         }
         LazyColumn(
             Modifier.fillMaxWidth().weight(1f).card(p, 16.dp),
@@ -678,7 +674,7 @@ fun LogScreen(onBack: () -> Unit) {
             items(lines) { l ->
                 val err = l.contains("rror") || l.contains("Ошибка") || l.contains("failed")
                 Text(
-                    l, color = if (err) Bad else p.text, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+                    l, color = if (err) Bad else p.text, fontSize = 11.5.sp, fontFamily = FontFamily.Monospace,
                     lineHeight = 17.sp, modifier = Modifier.padding(vertical = 1.dp)
                 )
             }
