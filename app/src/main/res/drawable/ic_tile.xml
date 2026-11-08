@@ -1,22 +1,20 @@
-<!-- Status bar, notification and quick settings icon: the R mark as a silhouette. -->
+<!-- Status bar, notification and quick settings icon: the R lettermark as a silhouette. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
     <group
-        android:scaleX="0.17"
-        android:scaleY="0.17"
-        android:translateX="5.455"
-        android:translateY="3.5">
+        android:scaleX="0.25"
+        android:scaleY="0.25"
+        android:translateX="-0.75"
+        android:translateY="-0.5">
         <path
             android:fillColor="#FFFFFFFF"
-            android:pathData="M0,0H44A25,25 0,0 1,44 50H0Z" />
+            android:fillType="evenOdd"
+            android:pathData="M16,12H50A26,26 0,0 1,50 64H40V88H16Z M50,28.5A9.5,9.5 0,1 1,50 47.5A9.5,9.5 0,1 1,50 28.5Z" />
         <path
             android:fillColor="#FFFFFFFF"
-            android:pathData="M0,56H25V100H0Z" />
-        <path
-            android:fillColor="#FFFFFFFF"
-            android:pathData="M31,56H58L77,100H50Z" />
+            android:pathData="M46,69H68L86,88H63Z" />
     </group>
 </vector>
