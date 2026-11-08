@@ -3,6 +3,7 @@ package com.rayscope.app.parser
 import android.util.Base64
 import com.rayscope.app.model.Server
 import com.rayscope.sub.ProxyEntry
+import com.rayscope.sub.ProxyLinks
 import com.rayscope.sub.SubFormats
 import org.json.JSONObject
 import java.net.URLDecoder
@@ -21,19 +22,20 @@ object LinkParser {
 
     fun parseMany(text: String): List<Server> {
         val t = text.trim().removePrefix("\uFEFF").trim()
-        var lines = t.lines().map { it.trim() }.filter { isLink(it) }
+        var lines = t.lines().map { it.trim() }.filter { isLink(it) || ProxyLinks.isProxy(it) }
         if (lines.isEmpty()) {
             // Remnawave, Marzban and friends give Happ / v2rayNG full Xray configs instead of links
             SubFormats.parseJson(t)?.let { return it.map { e -> e.toServer() } }
             val decoded = b64(t)
             if (decoded != null) {
-                lines = decoded.lines().map { it.trim() }.filter { isLink(it) }
+                lines = decoded.lines().map { it.trim() }.filter { isLink(it) || ProxyLinks.isProxy(it) }
                 if (lines.isEmpty()) SubFormats.parseJson(decoded)?.let { return it.map { e -> e.toServer() } }
             }
         }
         // a web page or a message with links somewhere inside
         if (lines.isEmpty()) lines = SubFormats.linksIn(t)
-        return lines.mapNotNull { runCatching { parse(it) }.getOrNull() }
+        // SOCKS5 and HTTP proxies: socks5://, http://user:pass@host:port, tg://socks, host:port:user:pass
+        return lines.mapNotNull { runCatching { parse(it) ?: ProxyLinks.parse(it)?.toServer() }.getOrNull() }
     }
 
     fun parse(link: String): Server? = when (link.substringBefore("://").lowercase()) {
