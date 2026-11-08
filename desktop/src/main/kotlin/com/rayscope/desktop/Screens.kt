@@ -52,7 +52,9 @@ fun openFolder(f: File) {
         try {
             java.awt.Desktop.getDesktop().open(f)
         } catch (e: Exception) {
-            Notice.show("Не удалось открыть папку: " + f.absolutePath)
+            // Linux without the GTK bits AWT wants: the desktop's own opener
+            val opened = !Paths.isWindows && runCatching { ProcessBuilder("xdg-open", f.absolutePath).start() }.isSuccess
+            if (!opened) Notice.show("Не удалось открыть папку: " + f.absolutePath)
         }
     }
 }
@@ -400,7 +402,7 @@ fun SettingsScreen(onOpenLog: () -> Unit) {
 
             Section("Подключение") {
                 ChoiceRow(
-                    "Режим", listOf("Системный прокси Windows", "TUN: весь трафик", "Только локальный прокси"),
+                    "Режим", listOf(if (Paths.isWindows) "Системный прокси Windows" else "Системный прокси", "TUN: весь трафик", "Только локальный прокси"),
                     when (prefs.mode) {
                         Mode.SYSTEM -> 0
                         Mode.TUN -> 1
@@ -596,7 +598,7 @@ fun SettingsScreen(onOpenLog: () -> Unit) {
 
             Section("Приложение", footer = "Ctrl K открывает меню команд, Ctrl 1–4 переключают разделы.") {
                 if (Autostart.available) {
-                    SwitchRow("Запускать вместе с Windows", "Свёрнутым в трей, без окна", autostart, enabled = !autostartBusy) { v ->
+                    SwitchRow(if (Paths.isWindows) "Запускать вместе с Windows" else "Запускать при входе в систему", "Свёрнутым в трей, без окна", autostart, enabled = !autostartBusy) { v ->
                         autostartBusy = true
                         Actions.go {
                             val ok = withContext(Dispatchers.IO) { Autostart.set(v) }
@@ -625,7 +627,7 @@ fun SettingsScreen(onOpenLog: () -> Unit) {
             }
 
             Section("О программе") {
-                SettingRow("Версия", "RayScope для Windows", onClick = {
+                SettingRow("Версия", "RayScope для " + Paths.osName, onClick = {
                     if (prefs.dev) {
                         Notice.show("Режим разработчика уже включён")
                     } else {
@@ -643,7 +645,7 @@ fun SettingsScreen(onOpenLog: () -> Unit) {
                     Text(APP_VERSION, color = p.hint, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
                 }
                 Line()
-                SettingRow("Ядро Xray", Paths.xray()?.parentFile?.absolutePath ?: "Не найдено: положите xray.exe в папку core") {
+                SettingRow("Ядро Xray", Paths.xray()?.parentFile?.absolutePath ?: "Не найдено: положите ${Paths.xrayName} в папку core") {
                     Text(core, color = p.hint, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
                 }
                 Line()
